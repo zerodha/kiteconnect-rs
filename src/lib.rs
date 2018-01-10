@@ -27,6 +27,7 @@ use crypto::sha2::Sha256;
 use hyper::header::{Accept, Headers};
 header! { (XKiteVersion, "X-Kite-Version") => [String] }
 header! { (UserAgent, "User-Agent") => [String] }
+header! { (Authorization, "Authorization") => [String] }
 
 #[cfg(not(test))]
 const URL: &'static str = "https://api.kite.trade";
@@ -69,7 +70,7 @@ pub struct KiteConnect {
 
 impl KiteConnect {
 
-    // Constructs url for the given path
+    /// Constructs url for the given path and query params
     fn build_url(&self, path: &str, param: Option<Vec<(&str, &str)>>) -> reqwest::Url {
         let url: &str = &format!("{}/{}", URL, &path[1..]);
         let mut url = reqwest::Url::parse(url).unwrap();
@@ -80,7 +81,7 @@ impl KiteConnect {
         url
     }
 
-    // Constructor
+    /// Constructor
     pub fn new(api_key: &str, access_token: &str) -> Self {
         Self {
             api_key: api_key.to_string(),
@@ -88,7 +89,7 @@ impl KiteConnect {
         }
     }
 
-    // Raise or return json response
+    /// Raise or return json response for a given response
     fn _raise_or_return_json(&self, resp: &mut reqwest::Response) -> Result<json::Value> {
         if resp.status().as_u16() == 200 {
             let jsn: json::Value = resp.json()?;
@@ -98,22 +99,23 @@ impl KiteConnect {
         }
     }
 
-    // Set an access token
+    /// Sets an access token for this instance
     pub fn set_access_token(&mut self, access_token: &str) {
         self.access_token = access_token.to_string();
     }
 
-    // Returns the login url
+    /// Returns the login url
     pub fn login_url(&self) -> String {
         format!("https://kite.trade/connect/login?api_key={}", self.api_key)
     }
 
-    // Request for access token
+    /// Request for access token
     pub fn request_access_token(
         &mut self,
         request_token: &str,
         api_secret: &str
     ) -> Result<json::Value> {
+        // Create a hex digest from api key, request token, api secret
         let mut sha = Sha256::new();
         sha.input_str(
             format!("{}{}{}", self.api_key, request_token, api_secret).as_str()
@@ -137,7 +139,7 @@ impl KiteConnect {
         }
     }
 
-    // Invalidates the access token
+    /// Invalidates the access token
     pub fn invalidate_token(&self, access_token: &str) -> Result<reqwest::Response> {
         let url = self.build_url("/session/token", None);
         let mut data = HashMap::new();
@@ -146,8 +148,8 @@ impl KiteConnect {
         self.send_request(url, "DELETE", Some(data))
     }
 
-    // Return the account balance and cash margin details for
-    // a particular segment
+    /// Return the account balance and cash margin details for
+    /// a particular segment
     pub fn margins(&self, segment: Option<String>) -> Result<json::Value> {
         let url: reqwest::Url;
         if segment.is_some() {
@@ -160,49 +162,235 @@ impl KiteConnect {
         self._raise_or_return_json(&mut resp)
     }
 
-    // Get all holdings
+    /// Get all holdings
     pub fn holdings(&self) -> Result<json::Value> {
-        let mut params: Vec<(&str, &str)> = Vec::new();
-        params.push(("api_key", self.api_key.as_str()));
-        params.push(("access_token", self.access_token.as_str()));
-
-        let url = self.build_url("/portfolio/holdings", Some(params));
+        let url = self.build_url("/portfolio/holdings", None);
 
         let mut resp = self.send_request(url, "GET", None)?;
         self._raise_or_return_json(&mut resp)
     }
 
-    // Get all positions
+    /// Get all positions
     pub fn positions(&self) -> Result<json::Value> {
-        let mut params: Vec<(&str, &str)> = Vec::new();
-        params.push(("api_key", self.api_key.as_str()));
-        params.push(("access_token", self.access_token.as_str()));
-
-        let url = self.build_url("/portfolio/positions", Some(params));
+        let url = self.build_url("/portfolio/positions", None);
 
         let mut resp = self.send_request(url, "GET", None)?;
         self._raise_or_return_json(&mut resp)
     }
 
-    // Get all trades
-    pub fn trades(&self, order_id: Option<String>) -> Result<json::Value> {
-        let mut params: Vec<(&str, &str)> = Vec::new();
-        params.push(("api_key", self.api_key.as_str()));
-        params.push(("access_token", self.access_token.as_str()));
+    /// Get user profile details
+    pub fn profile(&self) -> Result<json::Value> {
+        let url = self.build_url("/user/profile", None);
 
+        let mut resp = self.send_request(url, "GET", None)?;
+        self._raise_or_return_json(&mut resp)
+    }
+
+    pub fn place_order(
+        &self,
+        exchange: &str,
+        tradingsymbol: &str,
+        transaction_type: &str,
+        quantity: &str,
+        variety: &str,
+        price: Option<&str>,
+        product: Option<&str>,
+        order_type: Option<&str>,
+        validity: Option<&str>,
+        disclosed_quantity: Option<&str>,
+        trigger_price: Option<&str>,
+        squareoff: Option<&str>,
+        stoploss: Option<&str>,
+        trailing_stoploss: Option<&str>,
+        tag: Option<&str>,
+    ) {
+        unimplemented!()
+    }
+
+    pub fn modify_order(
+        &self,
+        order_id: &str,
+        variety: &str,
+        parent_order_id: Option<&str>,
+        exchange: Option<&str>,
+        tradingsymbol: Option<&str>,
+        transaction_type: Option<&str>,
+        quantity: Option<&str>,
+        price: Option<&str>,
+        order_type: Option<&str>,
+        product: Option<&str>,
+        trigger_price: Option<&str>,
+        validity: Option<&str>,
+        disclosed_quantity: Option<&str>,
+    ) {
+        unimplemented!()
+    }
+
+    pub fn cancel_order(
+        &self,
+        order_id: &str,
+        variety: &str,
+        parent_order_id: Option<&str>,
+    ) {
+        unimplemented!()
+    }
+
+    pub fn exit_order(
+        &self,
+        order_id: &str,
+        variety: &str,
+        parent_order_id: Option<&str>,
+    ) {
+        unimplemented!()
+    }
+
+    pub fn orders(&self) -> Result<json::Value> {
+        let url = self.build_url("/orders", None);
+
+        let mut resp = self.send_request(url, "GET", None)?;
+        self._raise_or_return_json(&mut resp)
+    }
+
+    pub fn order_history(&self, order_id: &str) -> Result<json::Value> {
+        let mut params: Vec<(&str, &str)> = Vec::new();
+        params.push(("order_id", order_id));
+
+        let url = self.build_url("/orders", Some(params));
+
+        let mut resp = self.send_request(url, "GET", None)?;
+        self._raise_or_return_json(&mut resp)
+    }
+
+    /// Get all trades
+    pub fn trades(&self) -> Result<json::Value> {
+        let url = self.build_url("/trades", None);
+
+        let mut resp = self.send_request(url, "GET", None)?;
+        self._raise_or_return_json(&mut resp)
+    }
+
+    /// Get all trades
+    pub fn order_trades(&self, order_id: &str) -> Result<json::Value> {
+        let url = self.build_url(format!("/orders/{}/trades", order_id).as_str(), None);
+
+        let mut resp = self.send_request(url, "GET", None)?;
+        self._raise_or_return_json(&mut resp)
+    }
+
+    pub fn convert_position(
+        &self,
+        exchange: &str,
+        tradingsymbol: &str,
+        transaction_type: &str,
+        position_type: &str,
+        quantity: &str,
+        old_product: &str,
+        new_product: &str,
+    ) {
+        unimplemented!()
+    }
+
+    pub fn mf_orders(&self, order_id: Option<&str>) -> Result<json::Value> {
         let url: reqwest::Url;
         if order_id.is_some() {
-            url = self.build_url(format!("/orders/{}/trades", order_id.unwrap().as_str()).as_str(), None)
+            url = self.build_url(format!("/mf/orders/{}", order_id.unwrap()).as_str(), None);
         } else {
-            url = self.build_url("/trades", None);
+            url = self.build_url("/mf/orders", None);
         }
 
         let mut resp = self.send_request(url, "GET", None)?;
         self._raise_or_return_json(&mut resp)
     }
 
+    pub fn place_mf_order(
+        &self,
+        tradingsymbol: &str,
+        transaction_type: &str,
+        quantity: Option<&str>,
+        amount: Option<&str>,
+        tag: Option<&str>
+    ) {
+        unimplemented!()
+    }
+
+    pub fn cancel_mf_order(&self, order_id: &str) {
+        unimplemented!()
+    }
+
+    pub fn mf_sips(&self, sip_id: Option<&str>) {
+        unimplemented!()
+    }
+
+    pub fn place_mf_sip(
+        &self,
+        tradingsymbol: &str,
+        amount: &str,
+        instalments: &str,
+        frequency: &str,
+        initial_amount: Option<&str>,
+        instalment_day: Option<&str>,
+        tag: Option<&str>
+    ) {
+        unimplemented!()
+    }
+
+    pub fn modify_mf_sip(
+        &self,
+        sip_id: &str,
+        amount: &str,
+        status: &str,
+        instalments: &str,
+        frequency: &str,
+        instalment_day: Option<&str>,
+    ) {
+        unimplemented!()
+    }
+
+    pub fn cancel_mf_sip(&self, sip_id: &str) {
+        unimplemented!()
+    }
+
+    pub fn mf_holdings(&self) {
+        unimplemented!()
+    }
+
+    pub fn mf_instruments(&self) {
+        unimplemented!()
+    }
+
+    pub fn instruments(&self, exchange: Option<&str>) {
+        unimplemented!()
+    }
+
+    pub fn quote(&self, instruments: Vec<&str>) {
+        unimplemented!()
+    }
+
+    pub fn ohlc(&self, instruments: Vec<&str>) {
+        unimplemented!()
+    }
+
+    pub fn ltp(&self, instruments: Vec<&str>) {
+        unimplemented!()
+    }
+
+    pub fn instruments_margins(&self, segment: &str) {
+        unimplemented!()
+    }
+
+    pub fn historical_data(
+        &self,
+        instrument_token: &str,
+        from_date: &str,
+        to_date: &str,
+        interval: &str,
+        continuos: bool,
+    ) {
+        unimplemented!()
+    }
 }
 
+/// Implement the request handler for kiteconnect struct
 impl RequestHandler for KiteConnect {
     // Generic request builder
     fn send_request(
@@ -213,6 +401,7 @@ impl RequestHandler for KiteConnect {
     ) -> Result<reqwest::Response> {
         let mut headers = Headers::new();
         headers.set(XKiteVersion("3".to_string()));
+        headers.set(Authorization(format!("token {}:{}", self.api_key, self.access_token)));
         headers.set(UserAgent("Rust".to_string()));
         headers.set(Accept::json());
         let client = reqwest::Client::new();
@@ -319,6 +508,24 @@ mod tests {
     }
 
     #[test]
+    fn test_order_trades() {
+        let api_key: &str = &env::var("API_KEY").unwrap();
+        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
+        let kiteconnect = KiteConnect::new(api_key, access_token);
+
+        let _mock2 = mockito::mock(
+            "GET", mockito::Matcher::Regex(r"^/orders/171229000724687/trades".to_string())
+        )
+        .match_header("Accept", "application/json")
+        .with_body_from_file("mocks/order_trades.json")
+        .create();
+
+        let data: json::Value = kiteconnect.order_trades("171229000724687").unwrap();
+        println!("{:?}", data);
+        assert!(data.is_object());
+    }
+
+    #[test]
     fn test_trades() {
         let api_key: &str = &env::var("API_KEY").unwrap();
         let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
@@ -328,17 +535,8 @@ mod tests {
         .match_header("Accept", "application/json")
         .with_body_from_file("mocks/trades.json")
         .create();
-        let _mock2 = mockito::mock(
-            "GET", mockito::Matcher::Regex(r"^/orders/171229000724687/trades".to_string())
-        )
-        .match_header("Accept", "application/json")
-        .with_body_from_file("mocks/order_trades.json")
-        .create();
 
-        let data: json::Value = kiteconnect.trades(None).unwrap();
-        println!("{:?}", data);
-        assert!(data.is_object());
-        let data: json::Value = kiteconnect.trades(Some("171229000724687".to_string())).unwrap();
+        let data: json::Value = kiteconnect.trades().unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
     }
