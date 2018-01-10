@@ -26,6 +26,7 @@ use crypto::sha2::Sha256;
 
 use hyper::header::{Accept, Headers};
 header! { (XKiteVersion, "X-Kite-Version") => [String] }
+header! { (UserAgent, "User-Agent") => [String] }
 
 #[cfg(not(test))]
 const URL: &'static str = "https://api.kite.trade";
@@ -98,8 +99,8 @@ impl KiteConnect {
     }
 
     // Set an access token
-    pub fn set_access_token(&mut self, access_token: String) {
-        self.access_token = access_token;
+    pub fn set_access_token(&mut self, access_token: &str) {
+        self.access_token = access_token.to_string();
     }
 
     // Returns the login url
@@ -129,7 +130,7 @@ impl KiteConnect {
 
         if resp.status().as_u16() == 200 {
             let jsn: json::Value = resp.json()?;
-            self.set_access_token(jsn["access_token"].to_string());
+            self.set_access_token(jsn["access_token"].as_str().unwrap());
             Ok(jsn)
         } else {
             Err(ErrorKind::KiteException(format!("{}", resp.text()?)).into())
@@ -212,6 +213,7 @@ impl RequestHandler for KiteConnect {
     ) -> Result<reqwest::Response> {
         let mut headers = Headers::new();
         headers.set(XKiteVersion("3".to_string()));
+        headers.set(UserAgent("Rust".to_string()));
         headers.set(Accept::json());
         let client = reqwest::Client::new();
 
@@ -234,6 +236,55 @@ impl RequestHandler for KiteConnect {
 mod tests {
     use super::*;
     use std::env;
+
+    #[test]
+    fn test_build_url() {
+        let kiteconnect = KiteConnect::new("key", "token");
+        let url = kiteconnect.build_url("/my-holdings", None);
+        assert_eq!(url.as_str(), format!("{}/my-holdings", URL).as_str());
+
+        let mut params: Vec<(&str, &str)> = Vec::new();
+        params.push(("one", "1"));
+        let url = kiteconnect.build_url("/my-holdings", Some(params));
+        assert_eq!(url.as_str(), format!("{}/my-holdings?one=1", URL).as_str());
+    }
+
+    #[test]
+    fn test_set_access_token() {
+        let mut kiteconnect = KiteConnect::new("key", "token");
+        assert_eq!(kiteconnect.access_token, "token");
+        kiteconnect.set_access_token("my_token");
+        assert_eq!(kiteconnect.access_token, "my_token");
+    }
+
+    #[test]
+    fn test_login_url() {
+        let kiteconnect = KiteConnect::new("key", "token");
+        assert_eq!(kiteconnect.login_url(), "https://kite.trade/connect/login?api_key=key");
+    }
+
+    #[test]
+    fn test_margins() {
+        let api_key: &str = &env::var("API_KEY").unwrap();
+        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
+        let kiteconnect = KiteConnect::new(api_key, access_token);
+
+        let _mock1 = mockito::mock("GET", mockito::Matcher::Regex(r"^/user/margins".to_string()))
+        .match_header("Accept", "application/json")
+        .with_body_from_file("mocks/margins.json")
+        .create();
+        let _mock1 = mockito::mock("GET", mockito::Matcher::Regex(r"^/user/margins/commodity".to_string()))
+        .match_header("Accept", "application/json")
+        .with_body_from_file("mocks/margins.json")
+        .create();
+
+        let data: json::Value = kiteconnect.margins(None).unwrap();
+        println!("{:?}", data);
+        assert!(data.is_object());
+        let data: json::Value = kiteconnect.margins(Some("commodity".to_string())).unwrap();
+        println!("{:?}", data);
+        assert!(data.is_object());
+    }
 
     #[test]
     fn test_holdings() {
@@ -263,6 +314,31 @@ mod tests {
         .create();
 
         let data: json::Value = kiteconnect.positions().unwrap();
+        println!("{:?}", data);
+        assert!(data.is_object());
+    }
+
+    #[test]
+    fn test_trades() {
+        let api_key: &str = &env::var("API_KEY").unwrap();
+        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
+        let kiteconnect = KiteConnect::new(api_key, access_token);
+
+        let _mock1 = mockito::mock("GET", mockito::Matcher::Regex(r"^/trades".to_string()))
+        .match_header("Accept", "application/json")
+        .with_body_from_file("mocks/trades.json")
+        .create();
+        let _mock2 = mockito::mock(
+            "GET", mockito::Matcher::Regex(r"^/orders/171229000724687/trades".to_string())
+        )
+        .match_header("Accept", "application/json")
+        .with_body_from_file("mocks/order_trades.json")
+        .create();
+
+        let data: json::Value = kiteconnect.trades(None).unwrap();
+        println!("{:?}", data);
+        assert!(data.is_object());
+        let data: json::Value = kiteconnect.trades(Some("171229000724687".to_string())).unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
     }
