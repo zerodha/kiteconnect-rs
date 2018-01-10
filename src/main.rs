@@ -16,7 +16,8 @@ extern crate serde_derive;
 #[macro_use]
 extern crate serde_json as json;
 extern crate crypto;
-
+#[cfg(test)]
+extern crate mockito;
 
 use std::collections::HashMap;
 
@@ -24,11 +25,24 @@ use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 
 use hyper::header::{Accept, Headers};
-header! { (Apikey, "X-Kite-Version") => [String] }
+header! { (XKiteVersion, "X-Kite-Version") => [String] }
+
+#[cfg(not(test))]
+const URL: &'static str = "https://api.kite.trade";
+
+#[cfg(test)]
+const URL: &'static str = mockito::SERVER_URL;
 
 #[allow(unused_variables)]
-trait HttpAccessMethods {
-    fn send_request(&self, url: &str, data: Option<HashMap<&str, &str>>) {}
+trait RequestHandler {
+    fn send_request(
+        &self,
+        url: reqwest::Url,
+        method: &str,
+        data: Option<HashMap<&str, &str>>
+    ) -> Result<reqwest::Response> {
+        unimplemented!()
+    }
 }
 
 error_chain! {
@@ -41,7 +55,8 @@ error_chain! {
         KiteException(e: String){
             description("Gateway error"),
             display("{}", e),
-        } }
+        }
+    }
 
 }
 
@@ -55,7 +70,7 @@ impl KiteConnect {
 
     // Constructs url for the given path
     fn build_url(&self, path: &str, param: Option<Vec<(&str, &str)>>) -> reqwest::Url {
-        let url: &str = &format!("https://api.kite.trade/{}", &path[1..]);
+        let url: &str = &format!("{}/{}", URL, &path[1..]);
         let mut url = reqwest::Url::parse(url).unwrap();
 
         if let Some(data) = param {
@@ -79,9 +94,9 @@ impl KiteConnect {
             Ok(jsn)
         } else {
             Err(ErrorKind::KiteException(format!("{}", resp.text()?)).into())
-        }   
+        }
     }
- 
+
     // Set an access token
     pub fn set_access_token(&mut self, access_token: String) {
         self.access_token = access_token;
@@ -133,7 +148,7 @@ impl KiteConnect {
     // Return the account balance and cash margin details for
     // a particular segment
     pub fn margins(&self, segment: Option<String>) -> Result<json::Value> {
-        let mut url;
+        let url: reqwest::Url;
         if segment.is_some() {
             url = self.build_url(format!("/user/margins/{}", segment.unwrap().as_str()).as_str(), None)
         } else {
@@ -174,7 +189,7 @@ impl KiteConnect {
         params.push(("api_key", self.api_key.as_str()));
         params.push(("access_token", self.access_token.as_str()));
 
-        let mut url;
+        let url: reqwest::Url;
         if order_id.is_some() {
             url = self.build_url(format!("/orders/{}/trades", order_id.unwrap().as_str()).as_str(), None)
         } else {
@@ -185,6 +200,9 @@ impl KiteConnect {
         self._raise_or_return_json(&mut resp)
     }
 
+}
+
+impl RequestHandler for KiteConnect {
     // Generic request builder
     fn send_request(
         &self,
@@ -193,7 +211,7 @@ impl KiteConnect {
         data: Option<HashMap<&str, &str>>,
     ) -> Result<reqwest::Response> {
         let mut headers = Headers::new();
-        headers.set(Apikey("3".to_string()));
+        headers.set(XKiteVersion("3".to_string()));
         headers.set(Accept::json());
         let client = reqwest::Client::new();
 
@@ -210,7 +228,7 @@ impl KiteConnect {
 }
 
 
-// Integration tests
+// Mock tests
 
 #[cfg(test)]
 mod tests {
@@ -222,7 +240,29 @@ mod tests {
         let api_key: &str = &env::var("API_KEY").unwrap();
         let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
         let kiteconnect = KiteConnect::new(api_key, access_token);
+
+        let _mock = mockito::mock("GET", mockito::Matcher::Regex(r"^/portfolio/holdings".to_string()))
+        .match_header("Accept", "application/json")
+        .with_body_from_file("mocks/holdings.json")
+        .create();
+
         let data: json::Value = kiteconnect.holdings().unwrap();
+        println!("{:?}", data);
+        assert!(data.is_object());
+    }
+
+    #[test]
+    fn test_positions() {
+        let api_key: &str = &env::var("API_KEY").unwrap();
+        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
+        let kiteconnect = KiteConnect::new(api_key, access_token);
+
+        let _mock = mockito::mock("GET", mockito::Matcher::Regex(r"^/portfolio/positions".to_string()))
+        .match_header("Accept", "application/json")
+        .with_body_from_file("mocks/positions.json")
+        .create();
+
+        let data: json::Value = kiteconnect.positions().unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
     }
