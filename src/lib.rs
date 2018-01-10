@@ -406,15 +406,13 @@ impl RequestHandler for KiteConnect {
         headers.set(Accept::json());
         let client = reqwest::Client::new();
 
-        let resp = match method {
-            "GET" => client.get(url).headers(headers).send()?,
-            "POST" => client.post(url).headers(headers).json(&data).send()?,
-            "DELETE" => client.delete(url).headers(headers).send()?,
-            "PUT" => client.put(url).headers(headers).send()?,
-            _ => client.get(url).headers(headers).send()?,
-        };
-
-        Ok(resp)
+        match method {
+            "GET" => Ok(client.get(url).headers(headers).send()?),
+            "POST" => Ok(client.post(url).headers(headers).json(&data).send()?),
+            "DELETE" => Ok(client.delete(url).headers(headers).json(&data).send()?),
+            "PUT" => Ok(client.put(url).headers(headers).json(&data).send()?),
+            _ => Err(ErrorKind::KiteException("Unknown method".to_string()).into()),
+        }
     }
 }
 
