@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 
-use hyper::header::{Accept, Headers};
+use hyper::header::Headers;
 header! { (XKiteVersion, "X-Kite-Version") => [String] }
 header! { (UserAgent, "User-Agent") => [String] }
 header! { (Authorization, "Authorization") => [String] }
@@ -186,6 +186,7 @@ impl KiteConnect {
         self._raise_or_return_json(&mut resp)
     }
 
+    /// Place an order
     pub fn place_order(
         &self,
         exchange: &str,
@@ -203,10 +204,31 @@ impl KiteConnect {
         stoploss: Option<&str>,
         trailing_stoploss: Option<&str>,
         tag: Option<&str>,
-    ) {
-        unimplemented!()
+    ) -> Result<json::Value> {
+        let mut params = HashMap::new();
+        params.insert("exchange", exchange);
+        params.insert("tradingsymbol", tradingsymbol);
+        params.insert("transaction_type", transaction_type);
+        params.insert("quantity", quantity);
+        params.insert("variety", variety);
+        if price.is_some() { params.insert("price", price.unwrap()); }
+        if product.is_some() { params.insert("product", product.unwrap()); }
+        if order_type.is_some() { params.insert("order_type", order_type.unwrap()); }
+        if validity.is_some() { params.insert("validity", validity.unwrap()); }
+        if disclosed_quantity.is_some() { params.insert("disclosed_quantity", disclosed_quantity.unwrap()); }
+        if trigger_price.is_some() { params.insert("trigger_price", trigger_price.unwrap()); }
+        if squareoff.is_some() { params.insert("squareoff", squareoff.unwrap()); }
+        if stoploss.is_some() { params.insert("stoploss", stoploss.unwrap()); }
+        if trailing_stoploss.is_some() { params.insert("trailing_stoploss", trailing_stoploss.unwrap()); }
+        if tag.is_some() { params.insert("tag", tag.unwrap()); }
+
+        let url = self.build_url(format!("/orders/{}", variety).as_str(), None);
+
+        let mut resp = self.send_request(url, "POST", Some(params))?;
+        self._raise_or_return_json(&mut resp)
     }
 
+    /// Modify an open order
     pub fn modify_order(
         &self,
         order_id: &str,
@@ -222,28 +244,56 @@ impl KiteConnect {
         trigger_price: Option<&str>,
         validity: Option<&str>,
         disclosed_quantity: Option<&str>,
-    ) {
-        unimplemented!()
+    ) -> Result<json::Value> {
+        let mut params = HashMap::new();
+        params.insert("order_id", order_id);
+        params.insert("variety", variety);
+        if parent_order_id.is_some() { params.insert("parent_order_id", parent_order_id.unwrap()); }
+        if exchange.is_some() { params.insert("exchange", exchange.unwrap()); }
+        if tradingsymbol.is_some() { params.insert("tradingsymbol", tradingsymbol.unwrap()); }
+        if transaction_type.is_some() { params.insert("transaction_type", transaction_type.unwrap()); }
+        if quantity.is_some() { params.insert("quantity", quantity.unwrap()); }
+        if price.is_some() { params.insert("price", price.unwrap()); }
+        if order_type.is_some() { params.insert("order_type", order_type.unwrap()); }
+        if product.is_some() { params.insert("product", product.unwrap()); }
+        if trigger_price.is_some() { params.insert("trigger_price", trigger_price.unwrap()); }
+        if validity.is_some() { params.insert("validity", validity.unwrap()); }
+        if disclosed_quantity.is_some() { params.insert("disclosed_quantity", disclosed_quantity.unwrap()); }
+
+        let url = self.build_url(format!("/orders/{}/{}", variety, order_id).as_str(), None);
+
+        let mut resp = self.send_request(url, "POST", Some(params))?;
+        self._raise_or_return_json(&mut resp)
     }
 
+    /// Cancel an order
     pub fn cancel_order(
         &self,
         order_id: &str,
         variety: &str,
         parent_order_id: Option<&str>,
-    ) {
-        unimplemented!()
+    ) -> Result<json::Value> {
+        let mut params = HashMap::new();
+        params.insert("order_id", order_id);
+        params.insert("variety", variety);
+        if parent_order_id.is_some() { params.insert("parent_order_id", parent_order_id.unwrap()); }
+        let url = self.build_url(format!("/orders/{}/{}", variety, order_id).as_str(), None);
+
+        let mut resp = self.send_request(url, "DELETE", Some(params))?;
+        self._raise_or_return_json(&mut resp)
     }
 
+    /// Exit a BO/CO order
     pub fn exit_order(
         &self,
         order_id: &str,
         variety: &str,
         parent_order_id: Option<&str>,
-    ) {
-        unimplemented!()
+    ) -> Result<json::Value> {
+        self.cancel_order(order_id, variety, parent_order_id)
     }
 
+    /// Get a list of orders
     pub fn orders(&self) -> Result<json::Value> {
         let url = self.build_url("/orders", None);
 
@@ -251,6 +301,7 @@ impl KiteConnect {
         self._raise_or_return_json(&mut resp)
     }
 
+    /// Get the list of order history
     pub fn order_history(&self, order_id: &str) -> Result<json::Value> {
         let mut params: Vec<(&str, &str)> = Vec::new();
         params.push(("order_id", order_id));
@@ -277,6 +328,7 @@ impl KiteConnect {
         self._raise_or_return_json(&mut resp)
     }
 
+    /// Modify an open position product type
     pub fn convert_position(
         &self,
         exchange: &str,
@@ -286,10 +338,23 @@ impl KiteConnect {
         quantity: &str,
         old_product: &str,
         new_product: &str,
-    ) {
-        unimplemented!()
+    ) -> Result<json::Value> {
+        let mut params = HashMap::new();
+        params.insert("exchange", exchange);
+        params.insert("tradingsymbol", tradingsymbol);
+        params.insert("transaction_type", transaction_type);
+        params.insert("position_type", position_type);
+        params.insert("quantity", quantity);
+        params.insert("old_product", old_product);
+        params.insert("new_product", new_product);
+
+        let url = self.build_url("/portfolio/positions", None);
+
+        let mut resp = self.send_request(url, "PUT", Some(params))?;
+        self._raise_or_return_json(&mut resp)
     }
 
+    /// Get all mutual fund orders or individual order info
     pub fn mf_orders(&self, order_id: Option<&str>) -> Result<json::Value> {
         let url: reqwest::Url;
         if order_id.is_some() {
@@ -302,6 +367,7 @@ impl KiteConnect {
         self._raise_or_return_json(&mut resp)
     }
 
+    /// Place a mutual fund order
     pub fn place_mf_order(
         &self,
         tradingsymbol: &str,
@@ -309,18 +375,42 @@ impl KiteConnect {
         quantity: Option<&str>,
         amount: Option<&str>,
         tag: Option<&str>
-    ) {
-        unimplemented!()
+    ) -> Result<json::Value> {
+        let mut params = HashMap::new();
+        params.insert("tradingsymbol", tradingsymbol);
+        params.insert("transaction_type", transaction_type);
+        if quantity.is_some() { params.insert("quantity", quantity.unwrap()); }
+        if amount.is_some() { params.insert("amount", amount.unwrap()); }
+        if tag.is_some() { params.insert("tag", tag.unwrap()); }
+
+        let url = self.build_url("/mf/orders", None);
+
+        let mut resp = self.send_request(url, "POST", Some(params))?;
+        self._raise_or_return_json(&mut resp)
     }
 
-    pub fn cancel_mf_order(&self, order_id: &str) {
-        unimplemented!()
+    /// Cancel a mutual fund order
+    pub fn cancel_mf_order(&self, order_id: &str) -> Result<json::Value> {
+        let url = self.build_url(format!("/mf/orders/{}", order_id).as_str(), None);
+
+        let mut resp = self.send_request(url, "DELETE", None)?;
+        self._raise_or_return_json(&mut resp)
     }
 
-    pub fn mf_sips(&self, sip_id: Option<&str>) {
-        unimplemented!()
+    /// Get list of mutual fund SIP's or individual SIP info
+    pub fn mf_sips(&self, sip_id: Option<&str>) -> Result<json::Value> {
+        let url: reqwest::Url;
+        if sip_id.is_some() {
+            url = self.build_url(format!("/mf/sips/{}", sip_id.unwrap()).as_str(), None);
+        } else {
+            url = self.build_url("/mf/sips", None);
+        }
+
+        let mut resp = self.send_request(url, "GET", None)?;
+        self._raise_or_return_json(&mut resp)
     }
 
+    /// Place a mutual fund SIP
     pub fn place_mf_sip(
         &self,
         tradingsymbol: &str,
@@ -330,10 +420,23 @@ impl KiteConnect {
         initial_amount: Option<&str>,
         instalment_day: Option<&str>,
         tag: Option<&str>
-    ) {
-        unimplemented!()
+    ) -> Result<json::Value> {
+        let mut params = HashMap::new();
+        params.insert("tradingsymbol", tradingsymbol);
+        params.insert("amount", amount);
+        params.insert("instalments", instalments);
+        params.insert("frequency", frequency);
+        if initial_amount.is_some() { params.insert("initial_amount", initial_amount.unwrap()); }
+        if instalment_day.is_some() { params.insert("instalment_day", instalment_day.unwrap()); }
+        if tag.is_some() { params.insert("tag", tag.unwrap()); }
+
+        let url = self.build_url("/mf/sips", None);
+
+        let mut resp = self.send_request(url, "POST", Some(params))?;
+        self._raise_or_return_json(&mut resp)
     }
 
+    /// Modify a mutual fund SIP
     pub fn modify_mf_sip(
         &self,
         sip_id: &str,
@@ -342,51 +445,119 @@ impl KiteConnect {
         instalments: &str,
         frequency: &str,
         instalment_day: Option<&str>,
-    ) {
-        unimplemented!()
+    ) -> Result<json::Value> {
+        let mut params = HashMap::new();
+        params.insert("sip_id", sip_id);
+        params.insert("amount", amount);
+        params.insert("status", status);
+        params.insert("instalments", instalments);
+        params.insert("frequency", frequency);
+        if instalment_day.is_some() { params.insert("instalment_day", instalment_day.unwrap()); }
+
+        let url = self.build_url(format!("/mf/sips/{}", sip_id).as_str(), None);
+
+        let mut resp = self.send_request(url, "POST", Some(params))?;
+        self._raise_or_return_json(&mut resp)
     }
 
-    pub fn cancel_mf_sip(&self, sip_id: &str) {
-        unimplemented!()
+    /// Cancel a mutual fund SIP
+    pub fn cancel_mf_sip(&self, sip_id: &str) -> Result<json::Value> {
+        let url = self.build_url(format!("/mf/sips/{}", sip_id).as_str(), None);
+
+        let mut resp = self.send_request(url, "DELETE", None)?;
+        self._raise_or_return_json(&mut resp)
     }
 
-    pub fn mf_holdings(&self) {
-        unimplemented!()
+    /// Get a list of mutual fund holdings
+    pub fn mf_holdings(&self) -> Result<json::Value> {
+        let url = self.build_url("/mf/holdings", None);
+
+        let mut resp = self.send_request(url, "GET", None)?;
+        self._raise_or_return_json(&mut resp)
     }
 
-    pub fn mf_instruments(&self) {
-        unimplemented!()
+    /// Get list of mutual fund instruments
+    pub fn mf_instruments(&self) -> Result<reqwest::Response> {
+        let url = self.build_url("/mf/instruments", None);
+
+        self.send_request(url, "GET", None)
     }
 
-    pub fn instruments(&self, exchange: Option<&str>) {
-        unimplemented!()
+    /// Retrieve the list of market instruments available to trade
+    pub fn instruments(&self, exchange: Option<&str>) -> Result<reqwest::Response> {
+        let url: reqwest::Url;
+        if exchange.is_some() {
+            url = self.build_url(format!("/instruments{}", exchange.unwrap()).as_str(), None);
+        } else {
+            url = self.build_url("/instruments", None);
+        }
+
+        self.send_request(url, "GET", None)
     }
 
-    pub fn quote(&self, instruments: Vec<&str>) {
-        unimplemented!()
+    /// Retrieve quote for list of instruments
+    pub fn quote(&self, instruments: Vec<&str>) -> Result<json::Value> {
+        let instruments: String = instruments.join("");
+        let mut params = HashMap::new();
+        // FIXME
+        params.insert("i", instruments.as_str());
+        let url = self.build_url("/quote", None);
+
+        let mut resp = self.send_request(url, "GET", Some(params))?;
+        self._raise_or_return_json(&mut resp)
     }
 
-    pub fn ohlc(&self, instruments: Vec<&str>) {
-        unimplemented!()
+    /// Retreive OHLC and market depth for list of instruments
+    pub fn ohlc(&self, instruments: Vec<&str>) -> Result<json::Value> {
+        let instruments: String = instruments.join("");
+        let mut params = HashMap::new();
+        // FIXME
+        params.insert("i", instruments.as_str());
+        let url = self.build_url("/quote/ohlc", None);
+
+        let mut resp = self.send_request(url, "GET", Some(params))?;
+        self._raise_or_return_json(&mut resp)
     }
 
-    pub fn ltp(&self, instruments: Vec<&str>) {
-        unimplemented!()
+    /// Retreive last price for list of instuments
+    pub fn ltp(&self, instruments: Vec<&str>) -> Result<json::Value> {
+        let instruments: String = instruments.join("");
+        let mut params = HashMap::new();
+        // FIXME
+        params.insert("i", instruments.as_str());
+        let url = self.build_url("/quote/ltp", None);
+
+        let mut resp = self.send_request(url, "GET", Some(params))?;
+        self._raise_or_return_json(&mut resp)
     }
 
-    pub fn instruments_margins(&self, segment: &str) {
-        unimplemented!()
+    /// Retreive margins provided for individual segments
+    pub fn instruments_margins(&self, segment: &str) -> Result<json::Value> {
+        let url = self.build_url(format!("/margins/{}", segment).as_str(), None);
+
+        let mut resp = self.send_request(url, "GET", None)?;
+        self._raise_or_return_json(&mut resp)
     }
 
+    /// Retreive historical data (candles) for an instument
     pub fn historical_data(
         &self,
         instrument_token: &str,
         from_date: &str,
         to_date: &str,
         interval: &str,
-        continuos: bool,
-    ) {
-        unimplemented!()
+        continuos: &str,
+    ) -> Result<json::Value> {
+        let mut params = HashMap::new();
+        params.insert("instrument_token", instrument_token);
+        params.insert("from", from_date);
+        params.insert("to", to_date);
+        params.insert("interval", interval);
+        params.insert("continuos", continuos);
+        let url = self.build_url(format!("/instruments/historical/{}/{}", instrument_token, interval).as_str(), None);
+
+        let mut resp = self.send_request(url, "GET", None)?;
+        self._raise_or_return_json(&mut resp)
     }
 }
 
@@ -403,11 +574,10 @@ impl RequestHandler for KiteConnect {
         headers.set(XKiteVersion("3".to_string()));
         headers.set(Authorization(format!("token {}:{}", self.api_key, self.access_token)));
         headers.set(UserAgent("Rust".to_string()));
-        headers.set(Accept::json());
         let client = reqwest::Client::new();
 
         match method {
-            "GET" => Ok(client.get(url).headers(headers).send()?),
+            "GET" => Ok(client.get(url).headers(headers).json(&data).send()?),
             "POST" => Ok(client.post(url).headers(headers).json(&data).send()?),
             "DELETE" => Ok(client.delete(url).headers(headers).json(&data).send()?),
             "PUT" => Ok(client.put(url).headers(headers).json(&data).send()?),
@@ -457,11 +627,9 @@ mod tests {
         let kiteconnect = KiteConnect::new(api_key, access_token);
 
         let _mock1 = mockito::mock("GET", mockito::Matcher::Regex(r"^/user/margins".to_string()))
-        .match_header("Accept", "application/json")
         .with_body_from_file("mocks/margins.json")
         .create();
         let _mock1 = mockito::mock("GET", mockito::Matcher::Regex(r"^/user/margins/commodity".to_string()))
-        .match_header("Accept", "application/json")
         .with_body_from_file("mocks/margins.json")
         .create();
 
@@ -480,7 +648,6 @@ mod tests {
         let kiteconnect = KiteConnect::new(api_key, access_token);
 
         let _mock = mockito::mock("GET", mockito::Matcher::Regex(r"^/portfolio/holdings".to_string()))
-        .match_header("Accept", "application/json")
         .with_body_from_file("mocks/holdings.json")
         .create();
 
@@ -496,7 +663,6 @@ mod tests {
         let kiteconnect = KiteConnect::new(api_key, access_token);
 
         let _mock = mockito::mock("GET", mockito::Matcher::Regex(r"^/portfolio/positions".to_string()))
-        .match_header("Accept", "application/json")
         .with_body_from_file("mocks/positions.json")
         .create();
 
@@ -514,11 +680,44 @@ mod tests {
         let _mock2 = mockito::mock(
             "GET", mockito::Matcher::Regex(r"^/orders/171229000724687/trades".to_string())
         )
-        .match_header("Accept", "application/json")
         .with_body_from_file("mocks/order_trades.json")
         .create();
 
         let data: json::Value = kiteconnect.order_trades("171229000724687").unwrap();
+        println!("{:?}", data);
+        assert!(data.is_object());
+    }
+
+    #[test]
+    fn test_orders() {
+        let api_key: &str = &env::var("API_KEY").unwrap();
+        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
+        let kiteconnect = KiteConnect::new(api_key, access_token);
+
+        let _mock2 = mockito::mock(
+            "GET", mockito::Matcher::Regex(r"^/orders".to_string())
+        )
+        .with_body_from_file("mocks/orders.json")
+        .create();
+
+        let data: json::Value = kiteconnect.orders().unwrap();
+        println!("{:?}", data);
+        assert!(data.is_object());
+    }
+
+    #[test]
+    fn test_order_history() {
+        let api_key: &str = &env::var("API_KEY").unwrap();
+        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
+        let kiteconnect = KiteConnect::new(api_key, access_token);
+
+        let _mock2 = mockito::mock(
+            "GET", mockito::Matcher::Regex(r"^/orders".to_string())
+        )
+        .with_body_from_file("mocks/order_info.json")
+        .create();
+
+        let data: json::Value = kiteconnect.order_history("171229000724687").unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
     }
@@ -530,11 +729,36 @@ mod tests {
         let kiteconnect = KiteConnect::new(api_key, access_token);
 
         let _mock1 = mockito::mock("GET", mockito::Matcher::Regex(r"^/trades".to_string()))
-        .match_header("Accept", "application/json")
         .with_body_from_file("mocks/trades.json")
         .create();
 
         let data: json::Value = kiteconnect.trades().unwrap();
+        println!("{:?}", data);
+        assert!(data.is_object());
+    }
+
+    #[test]
+    fn test_mf_orders() {
+        let api_key: &str = &env::var("API_KEY").unwrap();
+        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
+        let kiteconnect = KiteConnect::new(api_key, access_token);
+
+        let _mock1 = mockito::mock(
+            "GET", mockito::Matcher::Regex(r"^/mf/orders$".to_string())
+        )
+        .with_body_from_file("mocks/mf_orders.json")
+        .create();
+
+        let _mock2 = mockito::mock(
+            "GET", mockito::Matcher::Regex(r"^/mf/orders".to_string())
+        )
+        .with_body_from_file("mocks/mf_orders_info.json")
+        .create();
+
+        let data: json::Value = kiteconnect.mf_orders(None).unwrap();
+        println!("{:?}", data);
+        assert!(data.is_object());
+        let data: json::Value = kiteconnect.mf_orders(Some("171229000724687")).unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
     }
