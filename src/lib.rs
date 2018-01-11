@@ -122,7 +122,9 @@ impl KiteConnect {
         );
         let checksum = sha.result_str();
 
+        let api_key: &str = &self.api_key.clone();
         let mut data = HashMap::new();
+        data.insert("api_key", api_key);
         data.insert("request_token", request_token);
         data.insert("checksum", checksum.as_str());
 
