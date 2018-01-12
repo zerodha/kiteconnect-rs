@@ -106,11 +106,11 @@ impl KiteConnect {
 
     /// Returns the login url
     pub fn login_url(&self) -> String {
-        format!("https://kite.trade/connect/login?api_key={}", self.api_key)
+        format!("https://kite.trade/connect/login?api_key={}&v3", self.api_key)
     }
 
     /// Request for access token
-    pub fn request_access_token(
+    pub fn get_access_token(
         &mut self,
         request_token: &str,
         api_secret: &str
@@ -142,10 +142,51 @@ impl KiteConnect {
     }
 
     /// Invalidates the access token
-    pub fn invalidate_token(&self, access_token: &str) -> Result<reqwest::Response> {
+    pub fn invalidate_access_token(&self, access_token: &str) -> Result<reqwest::Response> {
         let url = self.build_url("/session/token", None);
         let mut data = HashMap::new();
         data.insert("access_token", access_token);
+
+        self.send_request(url, "DELETE", Some(data))
+    }
+
+    /// Request for new access token
+    pub fn renew_access_token(
+        &mut self,
+        access_token: &str,
+        api_secret: &str
+    ) -> Result<json::Value> {
+        // Create a hex digest from api key, request token, api secret
+        let mut sha = Sha256::new();
+        sha.input_str(
+            format!("{}{}{}", self.api_key, access_token, api_secret).as_str()
+        );
+        let checksum = sha.result_str();
+
+        let api_key: &str = &self.api_key.clone();
+        let mut data = HashMap::new();
+        data.insert("api_key", api_key);
+        data.insert("access_token", access_token);
+        data.insert("checksum", checksum.as_str());
+
+        let url = self.build_url("/session/refresh_token", None);
+
+        let mut resp = self.send_request(url, "POST", Some(data))?;
+
+        if resp.status().as_u16() == 200 {
+            let jsn: json::Value = resp.json()?;
+            self.set_access_token(jsn["access_token"].as_str().unwrap());
+            Ok(jsn)
+        } else {
+            Err(ErrorKind::KiteException(format!("{}", resp.text()?)).into())
+        }
+    }
+
+    /// Invalidates the refresh token
+    pub fn invalidate_refresh_token(&self, refresh_token: &str) -> Result<reqwest::Response> {
+        let url = self.build_url("/session/refresh_token", None);
+        let mut data = HashMap::new();
+        data.insert("refresh_token", refresh_token);
 
         self.send_request(url, "DELETE", Some(data))
     }
@@ -579,7 +620,7 @@ impl RequestHandler for KiteConnect {
         let client = reqwest::Client::new();
 
         match method {
-            "GET" => Ok(client.get(url).headers(headers).json(&data).send()?),
+            "GET" => Ok(client.get(url).headers(headers).send()?),
             "POST" => Ok(client.post(url).headers(headers).json(&data).send()?),
             "DELETE" => Ok(client.delete(url).headers(headers).json(&data).send()?),
             "PUT" => Ok(client.put(url).headers(headers).json(&data).send()?),
@@ -619,7 +660,7 @@ mod tests {
     #[test]
     fn test_login_url() {
         let kiteconnect = KiteConnect::new("key", "token");
-        assert_eq!(kiteconnect.login_url(), "https://kite.trade/connect/login?api_key=key");
+        assert_eq!(kiteconnect.login_url(), "https://kite.trade/connect/login?api_key=key&v3");
     }
 
     #[test]

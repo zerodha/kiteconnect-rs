@@ -270,7 +270,7 @@ dependencies = [
 
 [[package]]
 name = "kiteconnect_rust"
-version = "0.1.0"
+version = "0.1.1-alpha.0"
 dependencies = [
  "error-chain 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.11.9 (registry+https://github.com/rust-lang/crates.io-index)",
