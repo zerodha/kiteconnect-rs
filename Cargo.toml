@@ -1,6 +1,6 @@
 [package]
 name = "kiteconnect_rust"
-version = "0.1.1-alpha.0"
+version = "0.1.1"
 authors = ["Joe Paul <joeirimpan@gmail.com>"]
 description = "RUST API wrapper for kiteconnect APIs"
 license = "MIT"
