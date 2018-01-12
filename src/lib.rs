@@ -65,6 +65,17 @@ error_chain! {
 pub struct KiteConnect {
     api_key: String,
     access_token: String,
+    session_expiry_hook: Option<fn() -> ()>,
+}
+
+impl Default for KiteConnect {
+    fn default() -> Self {
+        KiteConnect {
+            api_key: "<API-KEY>".to_string(),
+            access_token: "<ACCESS-TOKEN>".to_string(),
+            session_expiry_hook: None
+        }
+    }
 }
 
 
@@ -85,7 +96,8 @@ impl KiteConnect {
     pub fn new(api_key: &str, access_token: &str) -> Self {
         Self {
             api_key: api_key.to_string(),
-            access_token: access_token.to_string()
+            access_token: access_token.to_string(),
+            ..Default::default()
         }
     }
 
@@ -97,6 +109,11 @@ impl KiteConnect {
         } else {
             Err(ErrorKind::KiteException(format!("{}", resp.text()?)).into())
         }
+    }
+
+    /// Sets an expiry hook method for this instance
+    pub fn set_session_expiry_hook(&mut self, method: fn() -> ()) {
+        self.session_expiry_hook = Some(method);
     }
 
     /// Sets an access token for this instance
@@ -655,6 +672,17 @@ mod tests {
         assert_eq!(kiteconnect.access_token, "token");
         kiteconnect.set_access_token("my_token");
         assert_eq!(kiteconnect.access_token, "my_token");
+    }
+
+    #[test]
+    fn test_session_expiry_hook() {
+        let mut kiteconnect = KiteConnect::new("key", "token");
+        assert_eq!(kiteconnect.session_expiry_hook, None);
+
+        fn mock_hook() { unimplemented!() }
+
+        kiteconnect.set_session_expiry_hook(mock_hook);
+        assert_ne!(kiteconnect.session_expiry_hook, None);
     }
 
     #[test]
