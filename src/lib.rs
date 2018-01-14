@@ -127,7 +127,7 @@ impl KiteConnect {
     }
 
     /// Request for access token
-    pub fn get_access_token(
+    pub fn generate_session(
         &mut self,
         request_token: &str,
         api_secret: &str
@@ -557,9 +557,9 @@ impl KiteConnect {
 
     /// Retrieve quote for list of instruments
     pub fn quote(&self, instruments: Vec<&str>) -> Result<json::Value> {
-        let instruments: String = instruments.join("");
+        let instruments: String = instruments.join(",");
+        let instruments = format!("[{}]", instruments.as_str());
         let mut params = HashMap::new();
-        // FIXME
         params.insert("i", instruments.as_str());
         let url = self.build_url("/quote", None);
 
@@ -569,9 +569,9 @@ impl KiteConnect {
 
     /// Retreive OHLC and market depth for list of instruments
     pub fn ohlc(&self, instruments: Vec<&str>) -> Result<json::Value> {
-        let instruments: String = instruments.join("");
+        let instruments: String = instruments.join(",");
+        let instruments = format!("[{}]", instruments.as_str());
         let mut params = HashMap::new();
-        // FIXME
         params.insert("i", instruments.as_str());
         let url = self.build_url("/quote/ohlc", None);
 
@@ -581,9 +581,9 @@ impl KiteConnect {
 
     /// Retreive last price for list of instuments
     pub fn ltp(&self, instruments: Vec<&str>) -> Result<json::Value> {
-        let instruments: String = instruments.join("");
+        let instruments: String = instruments.join(",");
+        let instruments = format!("[{}]", instruments.as_str());
         let mut params = HashMap::new();
-        // FIXME
         params.insert("i", instruments.as_str());
         let url = self.build_url("/quote/ltp", None);
 
@@ -638,7 +638,7 @@ impl RequestHandler for KiteConnect {
 
         match method {
             "GET" => Ok(client.get(url).headers(headers).send()?),
-            "POST" => Ok(client.post(url).headers(headers).json(&data).send()?),
+            "POST" => Ok(client.post(url).headers(headers).form(&data).send()?),
             "DELETE" => Ok(client.delete(url).headers(headers).json(&data).send()?),
             "PUT" => Ok(client.put(url).headers(headers).json(&data).send()?),
             _ => Err(ErrorKind::KiteException("Unknown method".to_string()).into()),
