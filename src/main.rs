@@ -12,6 +12,7 @@ extern crate serde_json as json;
 extern crate byteorder;
 
 
+use std::fmt;
 use std::thread;
 use std::io::Cursor;
 
@@ -60,15 +61,15 @@ impl Handler for KiteTicker {
     }
 
     fn on_open(&mut self, shake: Handshake) -> Result<()> {
-        // TODO Proxy
         // TODO Subscribe to the initial instrument_tokens
+        KiteTicker::on_open_cb(self.sender.clone());
         println!("Connection opened {:?}", shake);
         Ok(())
     }
 
     fn on_message(&mut self, msg: Message) -> Result<()> {
-        // TODO Proxy
-        if msg.is_binary() {
+        KiteTicker::on_message_cb(self.sender.clone(), msg.clone());
+        if msg.is_binary() && msg.len() > 2 {
             // TODO Split packet logic
             let mut reader = Cursor::new(msg.clone().into_data());
             let number_of_packets = reader.read_i16::<BigEndian>().unwrap();
@@ -83,12 +84,12 @@ impl Handler for KiteTicker {
     }
 
     fn on_close(&mut self, code: CloseCode, reason: &str) {
-        // TODO Proxy
+        KiteTicker::on_close_cb(self.sender.clone(), code.clone(), reason.clone());
         println!("Connection closed {:?}", code);
     }
 
     fn on_error(&mut self, err: Error) {
-        // TODO Proxy
+        KiteTicker::on_error_cb(self.sender.clone(), &err);
         println!("Error {:?}", err);
     }
 
@@ -104,6 +105,7 @@ struct KiteTicker {
 }
 
 
+/// Default trait implementation
 impl Default for KiteTicker {
     fn default() -> KiteTicker {
         KiteTicker {
@@ -113,6 +115,44 @@ impl Default for KiteTicker {
             user_id: "".to_string(),
         }
     }
+}
+
+
+/// Display trait implmentation
+impl fmt::Display for KiteTicker {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "KiteTicker( api_key={}, access_token={}, user_id={})",
+            self.api_key,
+            self.access_token,
+            self.user_id
+        )
+    }
+}
+
+
+/// KiteTickerHandler lets the user write the business logic inside
+/// the corresponding callbacks which are basically proxied from the
+/// Handler callbacks
+trait KiteTickerHandler {
+
+    fn on_open_cb(sender: Option<Sender>) -> Result<()> {
+        Ok(())
+    }
+
+    fn on_message_cb(sender: Option<Sender>, msg: Message) -> Result<()> {
+        Ok(())
+    }
+
+    fn on_close_cb(sender: Option<Sender>, code: CloseCode, reason: &str ) -> Result<()> {
+        Ok(())
+    }
+
+    fn on_error_cb(sender: Option<Sender>, err: &Error) -> Result<()> {
+        Ok(())
+    }
+
 }
 
 
@@ -225,6 +265,30 @@ fn main() {
     let api_key = env::var("API_KEY").unwrap();
     let access_token = env::var("ACCESS_TOKEN").unwrap();
     let user_id = env::var("USER_ID").unwrap();
+
+    impl KiteTickerHandler for KiteTicker {
+
+        fn on_message_cb(sender: Option<Sender>, msg: Message) -> Result<()> {
+            if sender.is_some() { println!("I am fellow on_message callback");}
+            Ok(())
+        }
+
+        fn on_open_cb(sender: Option<Sender>) -> Result<()> {
+            if sender.is_some() { println!("I am fellow on_open callback");}
+            Ok(())
+        }
+
+        fn on_close_cb(sender: Option<Sender>, code: CloseCode, reason: &str ) -> Result<()> {
+            if sender.is_some() { println!("I am fellow on_close callback");}
+            Ok(())
+        }
+
+        fn on_error_cb(sender: Option<Sender>, err: &Error) -> Result<()> {
+            if sender.is_some() { println!("I am fellow on_error callback");}
+            Ok(())
+        }
+
+    }
 
     let mut ticker = KiteTicker::new(api_key, access_token, user_id);
     ticker.connect();
