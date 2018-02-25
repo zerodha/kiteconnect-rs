@@ -15,34 +15,65 @@ extern crate byteorder;
 use std::fmt;
 use std::thread;
 use std::io::Cursor;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 use ws::{
     Handler, Handshake, Message, Sender, CloseCode, Result, Error,
-    Request, Builder, Factory
+    Request, Builder, Factory, WebSocket
 };
 
 use byteorder::{BigEndian, ReadBytesExt};
 
 
-struct KiteTickerFactory;
+/// KiteTickerHandler lets the user write the business logic inside
+/// the corresponding callbacks which are basically proxied from the
+/// Handler callbacks
+trait KiteTickerHandler {
+    fn on_open(&mut self) -> Result<()> {
+        println!("Connection opened");
+        Ok(())
+    }
+    fn on_message(&mut self, msg: Message) -> Result<()> {
+        println!("{:?}", msg);
+        Ok(())
+    }
+    fn on_close(&mut self) {
+        println!("Connection closed");
+    }
+    fn on_error(&mut self) {
+        println!("Error");
+    }
+}
+
+
+struct WebSocketFactory<T> where T: KiteTickerHandler {
+    handler: Rc<RefCell<Box<T>>>
+}
+
+
+struct WebSocketHandler<T> where T: KiteTickerHandler {
+    handler: Rc<RefCell<Box<T>>>,
+    ws: Sender
+}
 
 
 /// Implements Factory trait on KiteTickerFactory which essentialy
 /// sets the Handler type
-impl Factory for KiteTickerFactory {
-    type Handler = KiteTicker;
+impl<T> Factory for WebSocketFactory<T> where T: KiteTickerHandler {
+    type Handler = WebSocketHandler<T>;
 
-    fn connection_made(&mut self, ws: Sender) -> KiteTicker {
-        KiteTicker {
-            sender: Some(ws),
-            ..Default::default()
+    fn connection_made(&mut self, ws: Sender) -> WebSocketHandler<T> {
+        WebSocketHandler {
+            ws: ws,
+            handler: self.handler.clone()
         }
     }
 
-    fn client_connected(&mut self, ws: Sender) -> KiteTicker {
-        KiteTicker {
-            sender: Some(ws),
-            ..Default::default()
+    fn client_connected(&mut self, ws: Sender) -> WebSocketHandler<T> {
+        WebSocketHandler {
+            ws: ws,
+            handler: self.handler.clone()
         }
     }
 }
@@ -51,7 +82,7 @@ impl Factory for KiteTickerFactory {
 /// Implements the Handler trait on KiteTicker which provides all the
 /// callbacks methods ws-rs library
 #[cfg(feature="ssl")]
-impl Handler for KiteTicker {
+impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
 
     fn build_request(&mut self, url: &url::Url) -> Result<Request> {
         let mut req = Request::from_url(url)?;
@@ -61,35 +92,23 @@ impl Handler for KiteTicker {
     }
 
     fn on_open(&mut self, shake: Handshake) -> Result<()> {
-        // TODO Subscribe to the initial instrument_tokens
-        KiteTicker::on_open_cb(self.sender.clone());
+        self.handler.borrow_mut().on_open();
         println!("Connection opened {:?}", shake);
         Ok(())
     }
 
     fn on_message(&mut self, msg: Message) -> Result<()> {
-        KiteTicker::on_message_cb(self.sender.clone(), msg.clone());
-        if msg.is_binary() && msg.len() > 2 {
-            // TODO Split packet logic
-            let mut reader = Cursor::new(msg.clone().into_data());
-            let number_of_packets = reader.read_i16::<BigEndian>().unwrap();
-            for packet_index in 0..number_of_packets {
-                let packet_length = reader.read_i16::<BigEndian>().unwrap();
-                println!("PACKET_LENGTH : {}", packet_length);
-            }
-            // TODO Iter through packets and construct json
-            // self._parse_binary(&msg);
-        }
+        self.handler.borrow_mut().on_message(msg.clone());
         Ok(())
     }
 
     fn on_close(&mut self, code: CloseCode, reason: &str) {
-        KiteTicker::on_close_cb(self.sender.clone(), code.clone(), reason.clone());
+        self.handler.borrow_mut().on_close();
         println!("Connection closed {:?}", code);
     }
 
     fn on_error(&mut self, err: Error) {
-        KiteTicker::on_error_cb(self.sender.clone(), &err);
+        self.handler.borrow_mut().on_error();
         println!("Error {:?}", err);
     }
 
@@ -105,57 +124,6 @@ struct KiteTicker {
 }
 
 
-/// Default trait implementation
-impl Default for KiteTicker {
-    fn default() -> KiteTicker {
-        KiteTicker {
-            sender: None,
-            api_key: "".to_string(),
-            access_token: "".to_string(),
-            user_id: "".to_string(),
-        }
-    }
-}
-
-
-/// Display trait implmentation
-impl fmt::Display for KiteTicker {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "KiteTicker( api_key={}, access_token={}, user_id={})",
-            self.api_key,
-            self.access_token,
-            self.user_id
-        )
-    }
-}
-
-
-/// KiteTickerHandler lets the user write the business logic inside
-/// the corresponding callbacks which are basically proxied from the
-/// Handler callbacks
-trait KiteTickerHandler {
-
-    fn on_open_cb(sender: Option<Sender>) -> Result<()> {
-        Ok(())
-    }
-
-    fn on_message_cb(sender: Option<Sender>, msg: Message) -> Result<()> {
-        Ok(())
-    }
-
-    fn on_close_cb(sender: Option<Sender>, code: CloseCode, reason: &str ) -> Result<()> {
-        Ok(())
-    }
-
-    fn on_error_cb(sender: Option<Sender>, err: &Error) -> Result<()> {
-        Ok(())
-    }
-
-}
-
-
 /// Implments the apis exposed from KiteTicker struct
 #[cfg(feature="ssl")]
 impl KiteTicker {
@@ -163,30 +131,32 @@ impl KiteTicker {
     /// Constructor
     pub fn new(api_key: String, access_token: String, user_id: String) -> KiteTicker {
         KiteTicker {
+            sender: None,
             api_key: api_key,
             access_token: access_token,
             user_id: user_id,
-            sender: None
         }
     }
 
     /// Creates a websocket and delegates to it to child thread. Also sets the
     /// broadcaster so that other methods can easily send message on this socket
-    pub fn connect(&mut self) -> Result<()> {
-        let mut ws = Builder::new().build(
-            KiteTickerFactory{}
-        ).unwrap();
+    pub fn connect<F>(&mut self, handler: F) -> Result<()>
+        where F: KiteTickerHandler {
+        let factory = WebSocketFactory {
+            handler: Rc::new(RefCell::new(Box::new(handler)))
+        };
+        let mut ws = WebSocket::new(factory).unwrap();
         let sender = ws.broadcaster();
         let socket_url = format!(
-            "wss://websocket.kite.trade/v3?api_key={}&user_id={}&access_token={}",
+            "wss://ws.kite.trade?api_key={}&access_token={}",
             self.api_key,
-            self.user_id,
             self.access_token
         );
         let url = url::Url::parse(socket_url.as_str()).unwrap();
 
         ws.connect(url.clone()).unwrap();
-        thread::spawn(|| ws.run().unwrap());
+        // thread::spawn(|| ws.run().unwrap());
+        ws.run().unwrap();
 
         self.sender = Some(sender);
 
@@ -266,32 +236,24 @@ fn main() {
     let access_token = env::var("ACCESS_TOKEN").unwrap();
     let user_id = env::var("USER_ID").unwrap();
 
-    impl KiteTickerHandler for KiteTicker {
+    #[derive(Debug)]
+    struct MyStruct;
 
-        fn on_message_cb(sender: Option<Sender>, msg: Message) -> Result<()> {
-            if sender.is_some() { println!("I am fellow on_message callback");}
+    impl KiteTickerHandler for MyStruct {
+        fn on_open(&mut self) -> Result<()> {
+            println!(">>>>>>>>>OYE");
             Ok(())
         }
-
-        fn on_open_cb(sender: Option<Sender>) -> Result<()> {
-            if sender.is_some() { println!("I am fellow on_open callback");}
+        fn on_message(&mut self, msg: Message) -> Result<()> {
+            println!("I am fellow on_message callback");
+            println!("{:?}", msg);
             Ok(())
         }
-
-        fn on_close_cb(sender: Option<Sender>, code: CloseCode, reason: &str ) -> Result<()> {
-            if sender.is_some() { println!("I am fellow on_close callback");}
-            Ok(())
-        }
-
-        fn on_error_cb(sender: Option<Sender>, err: &Error) -> Result<()> {
-            if sender.is_some() { println!("I am fellow on_error callback");}
-            Ok(())
-        }
-
     }
 
     let mut ticker = KiteTicker::new(api_key, access_token, user_id);
-    ticker.connect();
+    let closure_struct = MyStruct{};
+    ticker.connect(closure_struct);
 
 
     ticker.subscribe(vec![256265]);
