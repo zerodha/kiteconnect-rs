@@ -17,6 +17,7 @@ use std::thread;
 use std::io::Cursor;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::sync::{Arc, Mutex};
 
 use ws::{
     Handler, Handshake, Message, Sender, CloseCode, Result, Error,
@@ -48,12 +49,12 @@ trait KiteTickerHandler {
 
 
 struct WebSocketFactory<T> where T: KiteTickerHandler {
-    handler: Rc<RefCell<Box<T>>>
+    handler: Arc<Mutex<Box<T>>>
 }
 
 
 struct WebSocketHandler<T> where T: KiteTickerHandler {
-    handler: Rc<RefCell<Box<T>>>,
+    handler: Arc<Mutex<Box<T>>>,
     ws: Sender
 }
 
@@ -92,23 +93,23 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
     }
 
     fn on_open(&mut self, shake: Handshake) -> Result<()> {
-        self.handler.borrow_mut().on_open();
+        self.handler.lock().unwrap().on_open();
         println!("Connection opened {:?}", shake);
         Ok(())
     }
 
     fn on_message(&mut self, msg: Message) -> Result<()> {
-        self.handler.borrow_mut().on_message(msg.clone());
+        self.handler.lock().unwrap().on_message(msg.clone());
         Ok(())
     }
 
     fn on_close(&mut self, code: CloseCode, reason: &str) {
-        self.handler.borrow_mut().on_close();
+        self.handler.lock().unwrap().on_close();
         println!("Connection closed {:?}", code);
     }
 
     fn on_error(&mut self, err: Error) {
-        self.handler.borrow_mut().on_error();
+        self.handler.lock().unwrap().on_error();
         println!("Error {:?}", err);
     }
 
@@ -141,9 +142,9 @@ impl KiteTicker {
     /// Creates a websocket and delegates to it to child thread. Also sets the
     /// broadcaster so that other methods can easily send message on this socket
     pub fn connect<F>(&mut self, handler: F) -> Result<()>
-        where F: KiteTickerHandler {
+        where F: KiteTickerHandler + Send + 'static {
         let factory = WebSocketFactory {
-            handler: Rc::new(RefCell::new(Box::new(handler)))
+            handler: Arc::new(Mutex::new(Box::new(handler)))
         };
         let mut ws = WebSocket::new(factory).unwrap();
         let sender = ws.broadcaster();
@@ -155,8 +156,8 @@ impl KiteTicker {
         let url = url::Url::parse(socket_url.as_str()).unwrap();
 
         ws.connect(url.clone()).unwrap();
-        // thread::spawn(|| ws.run().unwrap());
-        ws.run().unwrap();
+        thread::spawn(|| ws.run().unwrap());
+        // ws.run().unwrap();
 
         self.sender = Some(sender);
 
