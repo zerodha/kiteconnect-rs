@@ -12,16 +12,13 @@ extern crate serde_json as json;
 extern crate byteorder;
 
 
-use std::fmt;
 use std::thread;
 use std::io::Cursor;
-use std::rc::Rc;
-use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
 use ws::{
     Handler, Handshake, Message, Sender, CloseCode, Result, Error,
-    Request, Builder, Factory, WebSocket
+    Request, Factory, WebSocket
 };
 
 use byteorder::{BigEndian, ReadBytesExt};
@@ -165,14 +162,14 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
     }
 
     fn on_open(&mut self, shake: Handshake) -> Result<()> {
-        let mut cloned_handler = self.handler.clone();
+        let cloned_handler = self.handler.clone();
         cloned_handler.lock().unwrap().on_open(self);
         println!("Connection opened {:?}", shake);
         Ok(())
     }
 
     fn on_message(&mut self, msg: Message) -> Result<()> {
-        let mut cloned_handler = self.handler.clone();
+        let cloned_handler = self.handler.clone();
         cloned_handler.lock().unwrap().on_message(self, msg.clone());
         if msg.is_binary() && msg.len() > 2 {
             // TODO Split packet logic
@@ -189,13 +186,13 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
     }
 
     fn on_close(&mut self, code: CloseCode, reason: &str) {
-        let mut cloned_handler = self.handler.clone();
+        let cloned_handler = self.handler.clone();
         cloned_handler.lock().unwrap().on_close(self);
         println!("Connection closed {:?}", code);
     }
 
     fn on_error(&mut self, err: Error) {
-        let mut cloned_handler = self.handler.clone();
+        let cloned_handler = self.handler.clone();
         cloned_handler.lock().unwrap().on_error(self);
         println!("Error {:?}", err);
     }
