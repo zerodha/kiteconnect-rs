@@ -5,13 +5,6 @@
 //         unstable_features,
 //         unused_import_braces, unused_qualifications)]
 //
-extern crate ws;
-extern crate url;
-#[macro_use]
-extern crate serde_json as json;
-extern crate byteorder;
-
-
 use std::thread;
 use std::io::Cursor;
 use std::sync::{Arc, Mutex};
@@ -20,25 +13,24 @@ use ws::{
     Handler, Handshake, Message, Sender, CloseCode, Result, Error,
     Request, Factory, WebSocket
 };
-
 use byteorder::{BigEndian, ReadBytesExt};
+use url;
+use serde_json as json;
 
 
 /// KiteTickerHandler lets the user write the business logic inside
 /// the corresponding callbacks which are basically proxied from the
 /// Handler callbacks
-trait KiteTickerHandler {
+pub trait KiteTickerHandler {
 
-    fn on_open<T>(&mut self, ws: &mut WebSocketHandler<T>) -> Result<()>
+    fn on_open<T>(&mut self, ws: &mut WebSocketHandler<T>)
     where T: KiteTickerHandler {
         println!("Connection opened");
-        Ok(())
     }
 
-    fn on_message<T>(&mut self, ws: &mut WebSocketHandler<T>, msg: Message) -> Result<()>
+    fn on_message<T>(&mut self, ws: &mut WebSocketHandler<T>, msg: Message)
     where T: KiteTickerHandler {
         println!("{:?}", msg);
-        Ok(())
     }
 
     fn on_close<T>(&mut self, ws: &mut WebSocketHandler<T>)
@@ -79,7 +71,7 @@ impl<T> Factory for WebSocketFactory<T> where T: KiteTickerHandler {
 }
 
 
-struct WebSocketHandler<T> where T: KiteTickerHandler {
+pub struct WebSocketHandler<T> where T: KiteTickerHandler {
     handler: Arc<Mutex<Box<T>>>,
     ws: Option<Sender>
 }
@@ -201,11 +193,10 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
 
 
 #[cfg(feature="ssl")]
-struct KiteTicker {
+pub struct KiteTicker {
     sender: Option<Sender>,
     api_key: String,
     access_token: String,
-    user_id: String,
 }
 
 
@@ -214,12 +205,11 @@ struct KiteTicker {
 impl KiteTicker {
 
     /// Constructor
-    pub fn new(api_key: String, access_token: String, user_id: String) -> KiteTicker {
+    pub fn new(api_key: String, access_token: String) -> KiteTicker {
         KiteTicker {
             sender: None,
             api_key: api_key,
             access_token: access_token,
-            user_id: user_id,
         }
     }
 
@@ -241,50 +231,10 @@ impl KiteTicker {
 
         ws.connect(url.clone()).unwrap();
         thread::spawn(|| ws.run().unwrap());
-        // ws.run().unwrap();
 
         self.sender = Some(sender);
 
         Ok(())
     }
 
-}
-
-
-#[cfg(feature="ssl")]
-fn main() {
-
-    use std::env;
-
-    let api_key = env::var("API_KEY").unwrap();
-    let access_token = env::var("ACCESS_TOKEN").unwrap();
-    let user_id = env::var("USER_ID").unwrap();
-
-    #[derive(Debug)]
-    struct MyStruct;
-
-    impl KiteTickerHandler for MyStruct {
-        fn on_open<T>(&mut self, ws: &mut WebSocketHandler<T>) -> Result<()> where T: KiteTickerHandler {
-            ws.subscribe(vec![256265]);
-            println!(">>>>>>>>>OYE");
-            Ok(())
-        }
-        fn on_message<T>(&mut self, ws: &mut WebSocketHandler<T>, msg: Message) -> Result<()> where T: KiteTickerHandler {
-            println!("I am fellow on_message callback");
-            println!("{:?}", msg);
-            Ok(())
-        }
-    }
-
-    let mut ticker = KiteTicker::new(api_key, access_token, user_id);
-    let closure_struct = MyStruct{};
-    ticker.connect(closure_struct);
-
-    loop {}
-
-}
-
-#[cfg(not(feature="ssl"))]
-fn main() {
-    println!("SSL feature is not enabled.")
 }
