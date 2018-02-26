@@ -1,39 +1,8 @@
-# kiteconnect-rs
-API wrapper for kiteconnect in rust
-
-
-## Docs
-
-https://docs.rs/kiteconnect
-
-## Usage
-
-Head on to https://crates.io/crates/kiteconnect
-
-Copy `kiteconnect = "<VERSION>"` dependency to Cargo.toml file
-
-
-### KiteConnect REST APIs
-
-```rust
 extern crate kiteconnect;
-extern crate serde_json as json;
+extern crate ws;
 
-use kiteconnect::connect::KiteConnect;
-
-fn main() {
-    let kiteconnect = KiteConnect::new("<API-KEY>", "<ACCESS-TOKEN>");
-    let holdings: json::Value = kiteconnect.holdings().unwrap();
-    println!("{:?}", holdings);
-}
-```
-
-### Kite Ticker Websocket
-
-```rust
-extern crate kiteconnect;
-
-use kiteconnect::ticker::{KiteTicker, KiteTickerHandler, WebSocketHandler}
+use kiteconnect::ticker::{KiteTicker, KiteTickerHandler, WebSocketHandler};
+use ws::Message;
 
 #[derive(Debug)]
 struct CustomHandler {
@@ -74,23 +43,3 @@ fn main() {
 
     loop {}
 }
-
-```
-
-## Running Examples
-
-### KiteConnect REST API sample
-
-```bash
-cargo run --example connect_sample --features ssl
-```
-
-### KiteConnect Websocket sample
-```bash
-cargo run --example ticker_sample --features ssl
-```
-
-## TODO
-- [ ] Parsing binary to json
-- [ ] Add serializer structs for all kiteconnect returning datastructures
-- [ ] Reconnection mechanism
