@@ -31,18 +31,26 @@ use byteorder::{BigEndian, ReadBytesExt};
 /// the corresponding callbacks which are basically proxied from the
 /// Handler callbacks
 trait KiteTickerHandler {
-    fn on_open(&mut self) -> Result<()> {
+
+    fn on_open<T>(&mut self, ws: &mut WebSocketHandler<T>) -> Result<()>
+    where T: KiteTickerHandler {
         println!("Connection opened");
         Ok(())
     }
-    fn on_message(&mut self, msg: Message) -> Result<()> {
+
+    fn on_message<T>(&mut self, ws: &mut WebSocketHandler<T>, msg: Message) -> Result<()>
+    where T: KiteTickerHandler {
         println!("{:?}", msg);
         Ok(())
     }
-    fn on_close(&mut self) {
+
+    fn on_close<T>(&mut self, ws: &mut WebSocketHandler<T>)
+    where T: KiteTickerHandler {
         println!("Connection closed");
     }
-    fn on_error(&mut self) {
+
+    fn on_error<T>(&mut self, ws: &mut WebSocketHandler<T>)
+    where T: KiteTickerHandler {
         println!("Error");
     }
 }
@@ -53,12 +61,6 @@ struct WebSocketFactory<T> where T: KiteTickerHandler {
 }
 
 
-struct WebSocketHandler<T> where T: KiteTickerHandler {
-    handler: Arc<Mutex<Box<T>>>,
-    ws: Sender
-}
-
-
 /// Implements Factory trait on KiteTickerFactory which essentialy
 /// sets the Handler type
 impl<T> Factory for WebSocketFactory<T> where T: KiteTickerHandler {
@@ -66,16 +68,86 @@ impl<T> Factory for WebSocketFactory<T> where T: KiteTickerHandler {
 
     fn connection_made(&mut self, ws: Sender) -> WebSocketHandler<T> {
         WebSocketHandler {
-            ws: ws,
+            ws: Some(ws),
             handler: self.handler.clone()
         }
     }
 
     fn client_connected(&mut self, ws: Sender) -> WebSocketHandler<T> {
         WebSocketHandler {
-            ws: ws,
+            ws: Some(ws),
             handler: self.handler.clone()
         }
+    }
+}
+
+
+struct WebSocketHandler<T> where T: KiteTickerHandler {
+    handler: Arc<Mutex<Box<T>>>,
+    ws: Option<Sender>
+}
+
+
+impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
+    /// Subscribe to a list of instrument_tokens
+    pub fn subscribe(&self, instrument_tokens: Vec<u32>) -> Result<()> {
+        let data = json!({
+            "a": "subscribe",
+            "v": instrument_tokens
+        });
+        match self.ws {
+            Some(ref s) => {
+                s.send(data.to_string());
+                Ok(())
+            },
+            None => {
+                Ok(println!("Sender not bound to the instance"))
+            }
+        }
+    }
+
+    /// Unsubscribe the given list of instrument_tokens
+    pub fn unsubscribe(&self, instrument_tokens: Vec<u32>) -> Result<()> {
+        let data = json!({
+            "a": "unsubscribe",
+            "v": instrument_tokens
+        });
+        match self.ws {
+            Some(ref s) => {
+                s.send(data.to_string());
+                Ok(())
+            },
+            None => {
+                Ok(println!("Sender not bound to the instance"))
+            }
+        }
+    }
+
+    /// Resubscribe to all current subscribed tokens
+    pub fn resubscribe(&self) {
+        unimplemented!()
+    }
+
+    /// Set streaming mode for the given list of tokens.
+    pub fn set_mode(&self, mode: &str, instrument_tokens: Vec<u32>) -> Result<()> {
+        let data = json!({
+            "a": "mode",
+            "v": [mode.to_string(), instrument_tokens]
+        });
+        match self.ws {
+            Some(ref s) => {
+                s.send(data.to_string());
+                Ok(())
+            }
+            None => {
+                Ok(println!("Sender not bound to the instance"))
+            }
+        }
+    }
+
+    /// Parses binary message to a json
+    fn _parse_binary(&self, msg: &Message) {
+        println!(">>>>>>{:?}", msg);
     }
 }
 
@@ -93,23 +165,38 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
     }
 
     fn on_open(&mut self, shake: Handshake) -> Result<()> {
-        self.handler.lock().unwrap().on_open();
+        let mut cloned_handler = self.handler.clone();
+        cloned_handler.lock().unwrap().on_open(self);
         println!("Connection opened {:?}", shake);
         Ok(())
     }
 
     fn on_message(&mut self, msg: Message) -> Result<()> {
-        self.handler.lock().unwrap().on_message(msg.clone());
+        let mut cloned_handler = self.handler.clone();
+        cloned_handler.lock().unwrap().on_message(self, msg.clone());
+        if msg.is_binary() && msg.len() > 2 {
+            // TODO Split packet logic
+            let mut reader = Cursor::new(msg.clone().into_data());
+            let number_of_packets = reader.read_i16::<BigEndian>().unwrap();
+            for packet_index in 0..number_of_packets {
+                let packet_length = reader.read_i16::<BigEndian>().unwrap();
+                println!("PACKET_LENGTH : {}", packet_length);
+            }
+            // TODO Iter through packets and construct json
+            // self._parse_binary(&msg);
+        }
         Ok(())
     }
 
     fn on_close(&mut self, code: CloseCode, reason: &str) {
-        self.handler.lock().unwrap().on_close();
+        let mut cloned_handler = self.handler.clone();
+        cloned_handler.lock().unwrap().on_close(self);
         println!("Connection closed {:?}", code);
     }
 
     fn on_error(&mut self, err: Error) {
-        self.handler.lock().unwrap().on_error();
+        let mut cloned_handler = self.handler.clone();
+        cloned_handler.lock().unwrap().on_error(self);
         println!("Error {:?}", err);
     }
 
@@ -164,67 +251,6 @@ impl KiteTicker {
         Ok(())
     }
 
-    /// Subscribe to a list of instrument_tokens
-    pub fn subscribe(&self, instrument_tokens: Vec<u32>) -> Result<()> {
-        let data = json!({
-            "a": "subscribe",
-            "v": instrument_tokens
-        });
-        match self.sender {
-            Some(ref s) => {
-                s.send(data.to_string());
-                Ok(())
-            },
-            None => {
-                Ok(println!("Sender not bound to the instance"))
-            }
-        }
-    }
-
-    /// Unsubscribe the given list of instrument_tokens
-    pub fn unsubscribe(&self, instrument_tokens: Vec<u32>) -> Result<()> {
-        let data = json!({
-            "a": "unsubscribe",
-            "v": instrument_tokens
-        });
-        match self.sender {
-            Some(ref s) => {
-                s.send(data.to_string());
-                Ok(())
-            },
-            None => {
-                Ok(println!("Sender not bound to the instance"))
-            }
-        }
-    }
-
-    /// Resubscribe to all current subscribed tokens
-    pub fn resubscribe(&self) {
-        unimplemented!()
-    }
-
-    /// Set streaming mode for the given list of tokens.
-    pub fn set_mode(&self, mode: &str, instrument_tokens: Vec<u32>) -> Result<()> {
-        let data = json!({
-            "a": "mode",
-            "v": [mode.to_string(), instrument_tokens]
-        });
-        match self.sender {
-            Some(ref s) => {
-                s.send(data.to_string());
-                Ok(())
-            }
-            None => {
-                Ok(println!("Sender not bound to the instance"))
-            }
-        }
-    }
-
-    /// Parses binary message to a json
-    fn _parse_binary(&self, msg: &Message) {
-        println!(">>>>>>{:?}", msg);
-    }
-
 }
 
 
@@ -241,11 +267,12 @@ fn main() {
     struct MyStruct;
 
     impl KiteTickerHandler for MyStruct {
-        fn on_open(&mut self) -> Result<()> {
+        fn on_open<T>(&mut self, ws: &mut WebSocketHandler<T>) -> Result<()> where T: KiteTickerHandler {
+            ws.subscribe(vec![256265]);
             println!(">>>>>>>>>OYE");
             Ok(())
         }
-        fn on_message(&mut self, msg: Message) -> Result<()> {
+        fn on_message<T>(&mut self, ws: &mut WebSocketHandler<T>, msg: Message) -> Result<()> where T: KiteTickerHandler {
             println!("I am fellow on_message callback");
             println!("{:?}", msg);
             Ok(())
@@ -255,9 +282,6 @@ fn main() {
     let mut ticker = KiteTicker::new(api_key, access_token, user_id);
     let closure_struct = MyStruct{};
     ticker.connect(closure_struct);
-
-
-    ticker.subscribe(vec![256265]);
 
     loop {}
 
