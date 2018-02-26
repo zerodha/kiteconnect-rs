@@ -18,10 +18,6 @@ ws = "0.7.3"
 url = "1.5"
 byteorder = "1.2.1"
 
-[[bin]]
-name = "rust-kite"
-path = "./src/main.rs"
-
 [features]
 ssl = ["ws/ssl"]
 
