@@ -6,7 +6,7 @@
 //         unused_import_braces, unused_qualifications)]
 //
 use std::thread;
-use std::io::Cursor;
+use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 
 use ws::{
@@ -163,13 +163,103 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
     fn on_message(&mut self, msg: Message) -> Result<()> {
         let cloned_handler = self.handler.clone();
         cloned_handler.lock().unwrap().on_message(self, msg.clone());
+        println!("MESSAGE : {:?}", msg);
         if msg.is_binary() && msg.len() > 2 {
-            // TODO Split packet logic
+            println!("MESSAGE LENGTH: {}", msg.len());
             let mut reader = Cursor::new(msg.clone().into_data());
             let number_of_packets = reader.read_i16::<BigEndian>().unwrap();
+            println!("NUMBER OF PACKETS : {}", number_of_packets);
             for packet_index in 0..number_of_packets {
                 let packet_length = reader.read_i16::<BigEndian>().unwrap();
                 println!("PACKET_LENGTH : {}", packet_length);
+                reader.seek(SeekFrom::Start(4 * (packet_index + 1) as u64));
+                println!("POSITION : {}", reader.position());
+                let instrument_token = reader.read_i32::<BigEndian>().unwrap();
+                let segment = instrument_token & 0xff;
+                let mut divisor: f64 = 100.0;
+                if segment == 3 {  // cds
+                    divisor = 10000000.0;
+                }
+                let mut tradable = true;
+                if segment == 9 {  // indices
+                    tradable = false;
+                }
+                if packet_length == 8 {
+                    let mut data = json!({
+                        "tradable": tradable,
+                        "mode": "ltp",
+                        "instrument_token": instrument_token,
+                        "last_price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                    });
+                    println!("{:?}", data);
+                } else if packet_length == 28 || packet_length == 32 {
+                    let mut mode = "quote";
+                    if packet_length == 28 {
+                        mode = "full";
+                    } else {
+                        mode = "quote";
+                    }
+                    let mut data = json!({
+                        "tradable": tradable,
+                        "mode": mode,
+                        "instrument_token": instrument_token,
+                        "last_price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                        "ohlc": {
+                            "high": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                            "low": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                            "open": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                            "close": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                        },
+                        "change": 0
+                    });
+                    if data["ohlc"]["close"] != 0 {
+                        let last_price: f64 = data["last_price"].as_f64().unwrap();
+                        let ohlc_close: f64 = data["ohlc"]["close"].as_f64().unwrap();
+                        data["change"] = json!((last_price - ohlc_close) * 100 as f64 / ohlc_close);
+                    }
+                    if packet_length == 32 {  // timestamp incase of full
+                        data["timestamp"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64 / divisor);
+                    }
+                    println!("{:?}", data);
+                } else if packet_length == 44 || packet_length == 184 {
+                    let mut mode = "quote";
+                    if packet_length == 184 {
+                        mode = "full";
+                    } else {
+                        mode = "quote";
+                    }
+                    let mut data = json!({
+                        "tradable": tradable,
+                        "mode": mode,
+                        "instrument_token": instrument_token,
+                        "last_price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                        "last_quantity": reader.read_i32::<BigEndian>().unwrap() as f64,
+                        "average_price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                        "volume": reader.read_i32::<BigEndian>().unwrap() as f64,
+                        "buy_quantity": reader.read_i32::<BigEndian>().unwrap() as f64,
+                        "sell_quantity": reader.read_i32::<BigEndian>().unwrap() as f64,
+                        "ohlc": {
+                            "open": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                            "high": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                            "low": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                            "close": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor
+                        }
+                    });
+                    if data["ohlc"]["close"] != 0 {
+                        let last_price: f64 = data["last_price"].as_f64().unwrap();
+                        let ohlc_close: f64 = data["ohlc"]["close"].as_f64().unwrap();
+                        data["change"] = json!((last_price - ohlc_close) * 100 as f64 / ohlc_close);
+                    }
+                    if packet_length == 184 {
+                        data["last_trade_time"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
+                        data["oi"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
+                        data["oi_day_high"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
+                        data["oi_day_low"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
+                        data["timestamp"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
+
+                        // TODO Parse depth :(
+                    }
+                }
             }
             // TODO Iter through packets and construct json
             // self._parse_binary(&msg);
