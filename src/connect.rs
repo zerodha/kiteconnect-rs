@@ -614,6 +614,17 @@ impl KiteConnect {
         let mut resp = self.send_request(url, "GET", None)?;
         self._raise_or_return_json(&mut resp)
     }
+
+    pub fn trigger_range(&self, transaction_type: &str, instruments: Vec<&str>) -> Result<json::Value> {
+        let instruments: String = instruments.join(",");
+        let instruments = format!("[{}]", instruments.as_str());
+        let mut params = HashMap::new();
+        params.insert("i", instruments.as_str());
+        let url = self.build_url(format!("/instruments/trigger_range/{}", transaction_type).as_str(), None);
+
+        let mut resp = self.send_request(url, "GET", Some(params))?;
+        self._raise_or_return_json(&mut resp)
+    }
 }
 
 /// Implement the request handler for kiteconnect struct
@@ -825,6 +836,23 @@ mod tests {
         println!("{:?}", data);
         assert!(data.is_object());
         let data: json::Value = kiteconnect.mf_orders(Some("171229000724687")).unwrap();
+        println!("{:?}", data);
+        assert!(data.is_object());
+    }
+
+    #[test]
+    fn test_trigger_range() {
+        let api_key: &str = &env::var("API_KEY").unwrap();
+        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
+        let kiteconnect = KiteConnect::new(api_key, access_token);
+
+        let _mock2 = mockito::mock(
+            "GET", mockito::Matcher::Regex(r"^/instruments/trigger_range".to_string())
+        )
+        .with_body_from_file("mocks/trigger_range.json")
+        .create();
+
+        let data: json::Value = kiteconnect.trigger_range("BUY", vec!["NSE:INFY", "NSE:RELIANCE"]).unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
     }
