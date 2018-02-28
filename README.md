@@ -35,6 +35,7 @@ fn main() {
 
 ```rust
 extern crate kiteconnect;
+extern crate serde_json as json;
 
 use kiteconnect::ticker::{KiteTicker, KiteTickerHandler, WebSocketHandler}
 
@@ -50,9 +51,10 @@ impl KiteTickerHandler for CustomHandler {
         ws.subscribe(vec![123456]);
         println!("Fellow on_open callback");
     }
-    fn on_message<T>(&mut self, ws: &mut WebSocketHandler<T>, msg: Message)
+    fn on_ticks<T>(&mut self, ws: &mut WebSocketHandler<T>, tick: Vec<json::Value>)
     where T: KiteTickerHandler {
-        println!("Fellow on_message callback");
+        println!("{:?}", tick);
+        println!("Fellow on_ticks callback");
     }
 
     fn on_close<T>(&mut self, ws: &mut WebSocketHandler<T>)
@@ -67,7 +69,7 @@ impl KiteTickerHandler for CustomHandler {
 }
 
 fn main() {
-    let mut ticker = KiteTicker::new("<API-KEY>".to_string(), "<ACCESS-TOKEN>".to_string());
+    let mut ticker = KiteTicker::new("<API-KEY>", "<ACCESS-TOKEN>");
 
     let custom_handler = CustomHandler {
         count: 0
@@ -94,6 +96,5 @@ cargo run --example ticker_sample --features ssl
 ```
 
 ## TODO
-- [ ] Parsing binary to json
 - [ ] Add serializer structs for all kiteconnect returning datastructures
 - [ ] Reconnection mechanism
