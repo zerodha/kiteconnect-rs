@@ -28,9 +28,9 @@ pub trait KiteTickerHandler {
         println!("Connection opened");
     }
 
-    fn on_message<T>(&mut self, ws: &mut WebSocketHandler<T>, msg: Message)
+    fn on_ticks<T>(&mut self, ws: &mut WebSocketHandler<T>, tick: Vec<json::Value>)
     where T: KiteTickerHandler {
-        println!("{:?}", msg);
+        println!("{:?}", tick);
     }
 
     fn on_close<T>(&mut self, ws: &mut WebSocketHandler<T>)
@@ -133,11 +133,6 @@ impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
             }
         }
     }
-
-    /// Parses binary message to a json
-    fn _parse_binary(&self, msg: &Message) {
-        println!(">>>>>>{:?}", msg);
-    }
 }
 
 
@@ -149,31 +144,25 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
     fn build_request(&mut self, url: &url::Url) -> Result<Request> {
         let mut req = Request::from_url(url)?;
         req.headers_mut().push(("X-Kite-Version".into(), "3".into()));
-        println!("REQUEST: {:?}", req);
         Ok(req)
     }
 
     fn on_open(&mut self, shake: Handshake) -> Result<()> {
         let cloned_handler = self.handler.clone();
         cloned_handler.lock().unwrap().on_open(self);
-        println!("Connection opened {:?}", shake);
+        println!("Connection opened!");
         Ok(())
     }
 
     fn on_message(&mut self, msg: Message) -> Result<()> {
-        let cloned_handler = self.handler.clone();
-        cloned_handler.lock().unwrap().on_message(self, msg.clone());
-        println!("MESSAGE : {:?}", msg);
         if msg.is_binary() && msg.len() > 2 {
-            println!("MESSAGE LENGTH: {}", msg.len());
             let mut reader = Cursor::new(msg.clone().into_data());
             let number_of_packets = reader.read_i16::<BigEndian>().unwrap();
-            println!("NUMBER OF PACKETS : {}", number_of_packets);
+
+            let mut tick_data: Vec<json::Value> = Vec::new();
             for packet_index in 0..number_of_packets {
                 let packet_length = reader.read_i16::<BigEndian>().unwrap();
-                println!("PACKET_LENGTH : {}", packet_length);
                 reader.seek(SeekFrom::Start(4 * (packet_index + 1) as u64));
-                println!("POSITION : {}", reader.position());
                 let instrument_token = reader.read_i32::<BigEndian>().unwrap();
                 let segment = instrument_token & 0xff;
                 let mut divisor: f64 = 100.0;
@@ -184,14 +173,14 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
                 if segment == 9 {  // indices
                     tradable = false;
                 }
+                let mut data: json::Value = json!({});
                 if packet_length == 8 {
-                    let mut data = json!({
+                    data = json!({
                         "tradable": tradable,
                         "mode": "ltp",
                         "instrument_token": instrument_token,
                         "last_price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
                     });
-                    println!("{:?}", data);
                 } else if packet_length == 28 || packet_length == 32 {
                     let mut mode = "quote";
                     if packet_length == 28 {
@@ -199,7 +188,7 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
                     } else {
                         mode = "quote";
                     }
-                    let mut data = json!({
+                    data = json!({
                         "tradable": tradable,
                         "mode": mode,
                         "instrument_token": instrument_token,
@@ -220,7 +209,6 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
                     if packet_length == 32 {  // timestamp incase of full
                         data["timestamp"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64 / divisor);
                     }
-                    println!("{:?}", data);
                 } else if packet_length == 44 || packet_length == 184 {
                     let mut mode = "quote";
                     if packet_length == 184 {
@@ -228,7 +216,7 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
                     } else {
                         mode = "quote";
                     }
-                    let mut data = json!({
+                    data = json!({
                         "tradable": tradable,
                         "mode": mode,
                         "instrument_token": instrument_token,
@@ -257,12 +245,31 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
                         data["oi_day_low"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
                         data["timestamp"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
 
-                        // TODO Parse depth :(
+                        // XXX We have already read 64 bytes now, Remaining 184-64/12 = 10
+                        let mut buy_depth_data: Vec<json::Value> = Vec::with_capacity(5);
+                        let mut sell_depth_data: Vec<json::Value> = Vec::with_capacity(5);
+                        for index in 0..10 {
+                            let depth_data = json!({
+                                "quantity": reader.read_i32::<BigEndian>().unwrap() as f64,
+                                "price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                                "orders": reader.read_i16::<BigEndian>().unwrap() as f64
+                            });
+                            if index < 5 {
+                                buy_depth_data.push(depth_data);
+                            } else {
+                                sell_depth_data.push(depth_data);
+                            }
+                            // Dont care 2 bytes padding
+                            reader.read_i16::<BigEndian>().unwrap();
+                        }
+                        data["sell"] = json!(sell_depth_data);
+                        data["buy"] = json!(buy_depth_data);
                     }
                 }
+                tick_data.push(data);
             }
-            // TODO Iter through packets and construct json
-            // self._parse_binary(&msg);
+            let cloned_handler = self.handler.clone();
+            cloned_handler.lock().unwrap().on_ticks(self, tick_data);
         }
         Ok(())
     }
@@ -295,11 +302,11 @@ pub struct KiteTicker {
 impl KiteTicker {
 
     /// Constructor
-    pub fn new(api_key: String, access_token: String) -> KiteTicker {
+    pub fn new(api_key: &str, access_token: &str) -> KiteTicker {
         KiteTicker {
             sender: None,
-            api_key: api_key,
-            access_token: access_token,
+            api_key: api_key.to_string(),
+            access_token: access_token.to_string(),
         }
     }
 

@@ -1,5 +1,6 @@
 extern crate kiteconnect;
 extern crate ws;
+extern crate serde_json as json;
 
 use kiteconnect::ticker::{KiteTicker, KiteTickerHandler, WebSocketHandler};
 use ws::Message;
@@ -13,12 +14,15 @@ impl KiteTickerHandler for CustomHandler {
     fn on_open<T>(&mut self, ws: &mut WebSocketHandler<T>)
     where T: KiteTickerHandler {
         // Subscribe to a list of tokens on opening the websocket connection
-        ws.subscribe(vec![123456]);
+        ws.subscribe(vec![53511431]);
+        ws.set_mode("full", vec![53511431]);
         println!("Fellow on_open callback");
     }
-    fn on_message<T>(&mut self, ws: &mut WebSocketHandler<T>, msg: Message)
+
+    fn on_ticks<T>(&mut self, ws: &mut WebSocketHandler<T>, tick: Vec<json::Value>)
     where T: KiteTickerHandler {
-        println!("Fellow on_message callback");
+        println!("{:?}", tick);
+        println!("Fellow on_ticks callback");
     }
 
     fn on_close<T>(&mut self, ws: &mut WebSocketHandler<T>)
@@ -33,7 +37,7 @@ impl KiteTickerHandler for CustomHandler {
 }
 
 fn main() {
-    let mut ticker = KiteTicker::new("<API-KEY>".to_string(), "<ACCESS-TOKEN>".to_string());
+    let mut ticker = KiteTicker::new("<API-KEY>", "<ACCESS-TOKEN>");
 
     let custom_handler = CustomHandler {
         count: 0

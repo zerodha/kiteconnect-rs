@@ -658,7 +658,6 @@ impl RequestHandler for KiteConnect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
 
     #[test]
     fn test_build_url() {
@@ -699,9 +698,7 @@ mod tests {
 
     #[test]
     fn test_margins() {
-        let api_key: &str = &env::var("API_KEY").unwrap();
-        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
-        let kiteconnect = KiteConnect::new(api_key, access_token);
+        let kiteconnect = KiteConnect::new("API_KEY", "ACCESS_TOKEN");
 
         let _mock1 = mockito::mock("GET", mockito::Matcher::Regex(r"^/user/margins".to_string()))
         .with_body_from_file("mocks/margins.json")
@@ -720,9 +717,7 @@ mod tests {
 
     #[test]
     fn test_holdings() {
-        let api_key: &str = &env::var("API_KEY").unwrap();
-        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
-        let kiteconnect = KiteConnect::new(api_key, access_token);
+        let kiteconnect = KiteConnect::new("API_KEY", "ACCESS_TOKEN");
 
         let _mock = mockito::mock("GET", mockito::Matcher::Regex(r"^/portfolio/holdings".to_string()))
         .with_body_from_file("mocks/holdings.json")
@@ -735,9 +730,7 @@ mod tests {
 
     #[test]
     fn test_positions() {
-        let api_key: &str = &env::var("API_KEY").unwrap();
-        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
-        let kiteconnect = KiteConnect::new(api_key, access_token);
+        let kiteconnect = KiteConnect::new("API_KEY", "ACCESS_TOKEN");
 
         let _mock = mockito::mock("GET", mockito::Matcher::Regex(r"^/portfolio/positions".to_string()))
         .with_body_from_file("mocks/positions.json")
@@ -750,9 +743,7 @@ mod tests {
 
     #[test]
     fn test_order_trades() {
-        let api_key: &str = &env::var("API_KEY").unwrap();
-        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
-        let kiteconnect = KiteConnect::new(api_key, access_token);
+        let kiteconnect = KiteConnect::new("API_KEY", "ACCESS_TOKEN");
 
         let _mock2 = mockito::mock(
             "GET", mockito::Matcher::Regex(r"^/orders/171229000724687/trades".to_string())
@@ -767,9 +758,7 @@ mod tests {
 
     #[test]
     fn test_orders() {
-        let api_key: &str = &env::var("API_KEY").unwrap();
-        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
-        let kiteconnect = KiteConnect::new(api_key, access_token);
+        let kiteconnect = KiteConnect::new("API_KEY", "ACCESS_TOKEN");
 
         let _mock2 = mockito::mock(
             "GET", mockito::Matcher::Regex(r"^/orders".to_string())
@@ -784,9 +773,7 @@ mod tests {
 
     #[test]
     fn test_order_history() {
-        let api_key: &str = &env::var("API_KEY").unwrap();
-        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
-        let kiteconnect = KiteConnect::new(api_key, access_token);
+        let kiteconnect = KiteConnect::new("API_KEY", "ACCESS_TOKEN");
 
         let _mock2 = mockito::mock(
             "GET", mockito::Matcher::Regex(r"^/orders".to_string())
@@ -801,9 +788,7 @@ mod tests {
 
     #[test]
     fn test_trades() {
-        let api_key: &str = &env::var("API_KEY").unwrap();
-        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
-        let kiteconnect = KiteConnect::new(api_key, access_token);
+        let kiteconnect = KiteConnect::new("API_KEY", "ACCESS_TOKEN");
 
         let _mock1 = mockito::mock("GET", mockito::Matcher::Regex(r"^/trades".to_string()))
         .with_body_from_file("mocks/trades.json")
@@ -816,9 +801,7 @@ mod tests {
 
     #[test]
     fn test_mf_orders() {
-        let api_key: &str = &env::var("API_KEY").unwrap();
-        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
-        let kiteconnect = KiteConnect::new(api_key, access_token);
+        let kiteconnect = KiteConnect::new("API_KEY", "ACCESS_TOKEN");
 
         let _mock1 = mockito::mock(
             "GET", mockito::Matcher::Regex(r"^/mf/orders$".to_string())
@@ -842,9 +825,7 @@ mod tests {
 
     #[test]
     fn test_trigger_range() {
-        let api_key: &str = &env::var("API_KEY").unwrap();
-        let access_token: &str = &env::var("ACCESS_TOKEN").unwrap();
-        let kiteconnect = KiteConnect::new(api_key, access_token);
+        let kiteconnect = KiteConnect::new("API_KEY", "ACCESS_TOKEN");
 
         let _mock2 = mockito::mock(
             "GET", mockito::Matcher::Regex(r"^/instruments/trigger_range".to_string())
