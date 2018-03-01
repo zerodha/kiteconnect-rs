@@ -3,4 +3,4 @@ cache: cargo
 rust:
 - stable
 script:
-- cargo test --verbose --all --features ssl
+- cargo test --verbose --all

@@ -87,12 +87,12 @@ fn main() {
 ### KiteConnect REST API sample
 
 ```bash
-cargo run --example connect_sample --features ssl
+cargo run --example connect_sample
 ```
 
 ### KiteConnect Websocket sample
 ```bash
-cargo run --example ticker_sample --features ssl
+cargo run --example ticker_sample
 ```
 
 ## TODO
