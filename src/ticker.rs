@@ -138,7 +138,6 @@ impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
 
 /// Implements the Handler trait on KiteTicker which provides all the
 /// callbacks methods ws-rs library
-#[cfg(feature="ssl")]
 impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
 
     fn build_request(&mut self, url: &url::Url) -> Result<Request> {
@@ -289,7 +288,6 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
 }
 
 
-#[cfg(feature="ssl")]
 pub struct KiteTicker {
     sender: Option<Sender>,
     api_key: String,
@@ -298,7 +296,6 @@ pub struct KiteTicker {
 
 
 /// Implments the apis exposed from KiteTicker struct
-#[cfg(feature="ssl")]
 impl KiteTicker {
 
     /// Constructor
