@@ -46,7 +46,7 @@ error_chain! {
     foreign_links {
         Network(reqwest::Error);
         Io(::std::io::Error);
-        Json(json::Error);
+        Json(json::error::Error);
     }
     errors {
         KiteException(e: String){
@@ -55,6 +55,32 @@ error_chain! {
         }
     }
 
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Holding {
+    tradingsymbol: String,
+    exchange: String,
+    instrument_token: u32,
+    isin: String,
+    product: String,
+    price: f32,
+    quantity: u32,
+    t1_quantity: u32,
+    realised_quantity: u32,
+    collateral_quantity: u32,
+    collateral_type: String,
+    average_price: f32,
+    last_price: f32,
+    close_price: f32,
+    pnl: f32,
+    day_change: f32,
+    day_change_percentage: f32
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Holdings {
+    data: Vec<Holding>
 }
 
 pub struct KiteConnect {
@@ -218,11 +244,12 @@ impl KiteConnect {
     }
 
     /// Get all holdings
-    pub fn holdings(&self) -> Result<json::Value> {
+    pub fn holdings(&self) -> Result<Holdings> {
         let url = self.build_url("/portfolio/holdings", None);
 
         let mut resp = self.send_request(url, "GET", None)?;
-        self._raise_or_return_json(&mut resp)
+        let holdings: json::Value = self._raise_or_return_json(&mut resp).unwrap();
+        json::from_value(holdings).map_err(Error::from)
     }
 
     /// Get all positions
