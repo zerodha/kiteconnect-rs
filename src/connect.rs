@@ -146,7 +146,7 @@ impl KiteConnect {
 
         if resp.status().as_u16() == 200 {
             let jsn: json::Value = resp.json()?;
-            self.set_access_token(jsn["access_token"].as_str().unwrap());
+            self.set_access_token(jsn["data"]["access_token"].as_str().unwrap());
             Ok(jsn)
         } else {
             Err(ErrorKind::KiteException(format!("{}", resp.text()?)).into())
