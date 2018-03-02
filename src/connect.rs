@@ -18,6 +18,7 @@ use crypto::sha2::Sha256;
 use csv::ReaderBuilder;
 
 use reqwest::header::{Headers, Authorization, UserAgent};
+use serializers::{Data, Holding, Positions, AllMargins};
 
 #[cfg(not(test))]
 const URL: &'static str = "https://api.kite.trade";
@@ -41,7 +42,7 @@ error_chain! {
     foreign_links {
         Network(reqwest::Error);
         Io(::std::io::Error);
-        Json(json::Error);
+        Json(json::error::Error);
     }
     errors {
         KiteException(e: String){
@@ -67,7 +68,6 @@ impl Default for KiteConnect {
         }
     }
 }
-
 
 impl KiteConnect {
 
@@ -200,7 +200,7 @@ impl KiteConnect {
 
     /// Return the account balance and cash margin details for
     /// a particular segment
-    pub fn margins(&self, segment: Option<String>) -> Result<json::Value> {
+    pub fn margins(&self, segment: Option<String>) -> Result<Data<AllMargins>> {
         let url: reqwest::Url;
         if segment.is_some() {
             url = self.build_url(format!("/user/margins/{}", segment.unwrap().as_str()).as_str(), None)
@@ -209,23 +209,26 @@ impl KiteConnect {
         }
 
         let mut resp = self.send_request(url, "GET", None)?;
-        self._raise_or_return_json(&mut resp)
+        let margins: json::Value = self._raise_or_return_json(&mut resp).unwrap();
+        json::from_value(margins).map_err(Error::from)
     }
 
     /// Get all holdings
-    pub fn holdings(&self) -> Result<json::Value> {
+    pub fn holdings(&self) -> Result<Data<Vec<Holding>>> {
         let url = self.build_url("/portfolio/holdings", None);
 
         let mut resp = self.send_request(url, "GET", None)?;
-        self._raise_or_return_json(&mut resp)
+        let holdings: json::Value = self._raise_or_return_json(&mut resp).unwrap();
+        json::from_value(holdings).map_err(Error::from)
     }
 
     /// Get all positions
-    pub fn positions(&self) -> Result<json::Value> {
+    pub fn positions(&self) -> Result<Data<Positions>> {
         let url = self.build_url("/portfolio/positions", None);
 
         let mut resp = self.send_request(url, "GET", None)?;
-        self._raise_or_return_json(&mut resp)
+        let postions: json::Value = self._raise_or_return_json(&mut resp).unwrap();
+        json::from_value(postions).map_err(Error::from)
     }
 
     /// Get user profile details
@@ -751,12 +754,12 @@ mod tests {
         .with_body_from_file("mocks/margins.json")
         .create();
 
-        let data: json::Value = kiteconnect.margins(None).unwrap();
-        println!("{:?}", data);
-        assert!(data.is_object());
-        let data: json::Value = kiteconnect.margins(Some("commodity".to_string())).unwrap();
-        println!("{:?}", data);
-        assert!(data.is_object());
+        let margins: Data<AllMargins> = kiteconnect.margins(None).unwrap();
+        println!("{:?}", margins);
+        assert_eq!(margins.data.equity.unwrap().enabled, true);
+        let margins: Data<AllMargins> = kiteconnect.margins(Some("commodity".to_string())).unwrap();
+        println!("{:?}", margins);
+        assert_eq!(margins.data.equity.unwrap().enabled, true);
     }
 
     #[test]
@@ -767,9 +770,9 @@ mod tests {
         .with_body_from_file("mocks/holdings.json")
         .create();
 
-        let data: json::Value = kiteconnect.holdings().unwrap();
-        println!("{:?}", data);
-        assert!(data.is_object());
+        let holdings: Data<Vec<Holding>> = kiteconnect.holdings().unwrap();
+        println!("{:?}", holdings);
+        assert_eq!(holdings.data[0].tradingsymbol, "ABHICAP".to_string());
     }
 
     #[test]
@@ -780,9 +783,9 @@ mod tests {
         .with_body_from_file("mocks/positions.json")
         .create();
 
-        let data: json::Value = kiteconnect.positions().unwrap();
-        println!("{:?}", data);
-        assert!(data.is_object());
+        let positions: Data<Positions> = kiteconnect.positions().unwrap();
+        println!("{:?}", positions);
+        assert_eq!(positions.data.net[0].tradingsymbol, "NIFTY15DEC9500CE".to_string());
     }
 
     #[test]
