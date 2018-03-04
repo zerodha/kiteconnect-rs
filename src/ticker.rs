@@ -8,6 +8,7 @@
 use std::thread;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 
 use ws::{
     Handler, Handshake, Message, Sender, CloseCode, Result, Error,
@@ -16,6 +17,7 @@ use ws::{
 use byteorder::{BigEndian, ReadBytesExt};
 use url;
 use serde_json as json;
+use log;
 
 
 /// KiteTickerHandler lets the user write the business logic inside
@@ -25,22 +27,22 @@ pub trait KiteTickerHandler {
 
     fn on_open<T>(&mut self, ws: &mut WebSocketHandler<T>)
     where T: KiteTickerHandler {
-        println!("Connection opened");
+        debug!("Connection opened");
     }
 
     fn on_ticks<T>(&mut self, ws: &mut WebSocketHandler<T>, tick: Vec<json::Value>)
     where T: KiteTickerHandler {
-        println!("{:?}", tick);
+        debug!("{:?}", tick);
     }
 
     fn on_close<T>(&mut self, ws: &mut WebSocketHandler<T>)
     where T: KiteTickerHandler {
-        println!("Connection closed");
+        debug!("Connection closed");
     }
 
     fn on_error<T>(&mut self, ws: &mut WebSocketHandler<T>)
     where T: KiteTickerHandler {
-        println!("Error");
+        debug!("Error");
     }
 }
 
@@ -58,14 +60,16 @@ impl<T> Factory for WebSocketFactory<T> where T: KiteTickerHandler {
     fn connection_made(&mut self, ws: Sender) -> WebSocketHandler<T> {
         WebSocketHandler {
             ws: Some(ws),
-            handler: self.handler.clone()
+            handler: self.handler.clone(),
+            subscribed_tokens: HashMap::new()
         }
     }
 
     fn client_connected(&mut self, ws: Sender) -> WebSocketHandler<T> {
         WebSocketHandler {
             ws: Some(ws),
-            handler: self.handler.clone()
+            handler: self.handler.clone(),
+            subscribed_tokens: HashMap::new()
         }
     }
 }
@@ -73,63 +77,81 @@ impl<T> Factory for WebSocketFactory<T> where T: KiteTickerHandler {
 
 pub struct WebSocketHandler<T> where T: KiteTickerHandler {
     handler: Arc<Mutex<Box<T>>>,
-    ws: Option<Sender>
+    ws: Option<Sender>,
+    subscribed_tokens: HashMap<u32, String>
 }
 
 
 impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
     /// Subscribe to a list of instrument_tokens
-    pub fn subscribe(&self, instrument_tokens: Vec<u32>) -> Result<()> {
+    pub fn subscribe(&mut self, instrument_tokens: Vec<u32>) -> Result<()> {
         let data = json!({
             "a": "subscribe",
             "v": instrument_tokens
         });
+        for token in &instrument_tokens {
+            self.subscribed_tokens.insert(*token, "quote".to_string());
+        }
         match self.ws {
             Some(ref s) => {
                 s.send(data.to_string());
                 Ok(())
             },
             None => {
-                Ok(println!("Sender not bound to the instance"))
+                Ok(debug!("Sender not bound to the instance"))
             }
         }
     }
 
     /// Unsubscribe the given list of instrument_tokens
-    pub fn unsubscribe(&self, instrument_tokens: Vec<u32>) -> Result<()> {
+    pub fn unsubscribe(&mut self, instrument_tokens: Vec<u32>) -> Result<()> {
         let data = json!({
             "a": "unsubscribe",
             "v": instrument_tokens
         });
+        for token in &instrument_tokens {
+            self.subscribed_tokens.remove(token);
+        }
         match self.ws {
             Some(ref s) => {
                 s.send(data.to_string());
                 Ok(())
             },
             None => {
-                Ok(println!("Sender not bound to the instance"))
+                Ok(debug!("Sender not bound to the instance"))
             }
         }
     }
 
     /// Resubscribe to all current subscribed tokens
-    pub fn resubscribe(&self) {
-        unimplemented!()
+    pub fn resubscribe(&mut self) {
+        let mut modes: HashMap<String, Vec<u32>> = HashMap::new();
+        for (token, mode) in self.subscribed_tokens.iter() {
+            modes.entry(mode.clone()).or_insert(vec![]).push(token.clone());
+        }
+        for (mode, tokens) in modes.iter() {
+            debug!("Resubscribing and set mode: {} - {:?}", mode, tokens);
+            self.subscribe(tokens.clone());
+            self.set_mode(mode.as_str(), tokens.clone());
+        }
     }
 
     /// Set streaming mode for the given list of tokens.
-    pub fn set_mode(&self, mode: &str, instrument_tokens: Vec<u32>) -> Result<()> {
+    pub fn set_mode(&mut self, mode: &str, instrument_tokens: Vec<u32>) -> Result<()> {
         let data = json!({
             "a": "mode",
             "v": [mode.to_string(), instrument_tokens]
         });
+        for token in &instrument_tokens {
+            *self.subscribed_tokens.entry(*token).or_insert("".to_string()) = mode.to_string();
+        }
         match self.ws {
             Some(ref s) => {
                 s.send(data.to_string());
                 Ok(())
             }
             None => {
-                Ok(println!("Sender not bound to the instance"))
+                Ok(debug!("Sender not bound to the instance"))
             }
         }
     }
@@ -149,7 +171,7 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
     fn on_open(&mut self, shake: Handshake) -> Result<()> {
         let cloned_handler = self.handler.clone();
         cloned_handler.lock().unwrap().on_open(self);
-        println!("Connection opened!");
+        debug!("Connection opened!");
         Ok(())
     }
 
@@ -276,13 +298,13 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
     fn on_close(&mut self, code: CloseCode, reason: &str) {
         let cloned_handler = self.handler.clone();
         cloned_handler.lock().unwrap().on_close(self);
-        println!("Connection closed {:?}", code);
+        debug!("Connection closed {:?}", code);
     }
 
     fn on_error(&mut self, err: Error) {
         let cloned_handler = self.handler.clone();
         cloned_handler.lock().unwrap().on_error(self);
-        println!("Error {:?}", err);
+        debug!("Error {:?}", err);
     }
 
 }

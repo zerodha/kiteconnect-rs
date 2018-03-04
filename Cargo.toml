@@ -16,6 +16,7 @@ error-chain = "0.11.0"
 rust-crypto = "0.2.36"
 url = "1.5"
 byteorder = "1.2.1"
+log = "0.4.1"
 
 [dependencies.ws]
 version = "0.7.3"
