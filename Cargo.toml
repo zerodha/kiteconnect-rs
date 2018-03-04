@@ -17,6 +17,7 @@ rust-crypto = "0.2.36"
 url = "1.5"
 byteorder = "1.2.1"
 log = "0.4.1"
+csv = "1.0.0-beta.5"
 
 [dependencies.ws]
 version = "0.7.3"
