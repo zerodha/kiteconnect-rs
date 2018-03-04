@@ -16,6 +16,8 @@ extern crate mockito;
 extern crate ws;
 extern crate url;
 extern crate byteorder;
+#[macro_use]
+extern crate log;
 
 pub mod connect;
 pub mod ticker;
