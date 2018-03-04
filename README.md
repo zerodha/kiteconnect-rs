@@ -1,6 +1,6 @@
 # kiteconnect-rs
 [![Crates.io](https://img.shields.io/crates/v/kiteconnect.svg)](https://crates.io/crates/kiteconnect)
-[![Travis](https://img.shields.io/travis/zerodhatech/kiteconnect-rs.svg)](https://travis-ci.org/zerodhatech/kiteconnect-rs/)
+[![Travis](https://img.shields.io/travis/zerodhatech/kiteconnect-rs/master.svg)](https://travis-ci.org/zerodhatech/kiteconnect-rs/)
 
 API wrapper for kiteconnect in rust
 
