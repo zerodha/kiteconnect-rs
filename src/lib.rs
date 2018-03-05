@@ -11,6 +11,7 @@ extern crate serde_json;
 extern crate crypto;
 #[cfg(test)]
 extern crate mockito;
+extern crate csv;
 
 
 extern crate ws;

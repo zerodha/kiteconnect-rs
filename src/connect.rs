@@ -18,6 +18,7 @@ use std::collections::HashMap;
 
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
+use csv::ReaderBuilder;
 
 use hyper::header::Headers;
 header! { (XKiteVersion, "X-Kite-Version") => [String] }
@@ -532,14 +533,40 @@ impl KiteConnect {
     }
 
     /// Get list of mutual fund instruments
-    pub fn mf_instruments(&self) -> Result<reqwest::Response> {
+    pub fn mf_instruments(&self) -> Result<json::Value> {
         let url = self.build_url("/mf/instruments", None);
 
-        self.send_request(url, "GET", None)
+        let mut resp: reqwest::Response = self.send_request(url, "GET", None).unwrap();
+        let content: String = resp.text().unwrap();
+        let mut csv_reader = ReaderBuilder::new().from_reader(content.as_bytes());
+        let mut mf_instruments: Vec<json::Value> = Vec::new();
+        for record in csv_reader.records() {
+            let mf_instrument = record.unwrap();
+            mf_instruments.push(json!({
+                "tradingsymbol": mf_instrument[0],
+                "amc": mf_instrument[1],
+                "name": mf_instrument[2],
+                "purchase_allowed": mf_instrument[3],
+                "redemption_allowed": mf_instrument[4],
+                "minimum_purchase_amount": mf_instrument[5],
+                "purchase_amount_multiplier": mf_instrument[6],
+                "minimum_additional_purchase_amount": mf_instrument[7],
+                "minimum_redemption_quantity": mf_instrument[8],
+                "redemption_quantity_multiplier": mf_instrument[9],
+                "dividend_type": mf_instrument[10],
+                "scheme_type": mf_instrument[11],
+                "plan": mf_instrument[12],
+                "settlement_type": mf_instrument[13],
+                "last_price": mf_instrument[14],
+                "last_price_date": mf_instrument[15],
+            }))
+        }
+
+        Ok(json!(mf_instruments))
     }
 
     /// Retrieve the list of market instruments available to trade
-    pub fn instruments(&self, exchange: Option<&str>) -> Result<reqwest::Response> {
+    pub fn instruments(&self, exchange: Option<&str>) -> Result<json::Value> {
         let url: reqwest::Url;
         if exchange.is_some() {
             url = self.build_url(format!("/instruments{}", exchange.unwrap()).as_str(), None);
@@ -547,7 +574,29 @@ impl KiteConnect {
             url = self.build_url("/instruments", None);
         }
 
-        self.send_request(url, "GET", None)
+        let mut resp: reqwest::Response = self.send_request(url, "GET", None).unwrap();
+        let content: String = resp.text().unwrap();
+        let mut csv_reader = ReaderBuilder::new().from_reader(content.as_bytes());
+        let mut instruments: Vec<json::Value> = Vec::new();
+        for record in csv_reader.records() {
+            let instrument = record.unwrap();
+            instruments.push(json!({
+                "instrument_token": instrument[0],
+                "exchange_token": instrument[1],
+                "tradingsymbol": instrument[2],
+                "name": instrument[3],
+                "last_price": instrument[4],
+                "expiry": instrument[5],
+                "strike": instrument[6],
+                "tick_size": instrument[7],
+                "lot_size": instrument[8],
+                "instrument_type": instrument[9],
+                "segment": instrument[10],
+                "exchange": instrument[11]
+            }))
+        }
+
+        Ok(json!(instruments))
     }
 
     /// Retrieve quote for list of instruments
@@ -836,5 +885,35 @@ mod tests {
         let data: json::Value = kiteconnect.trigger_range("BUY", vec!["NSE:INFY", "NSE:RELIANCE"]).unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
+    }
+
+    #[test]
+    fn test_instruments() {
+        let kiteconnect = KiteConnect::new("API_KEY", "ACCESS_TOKEN");
+
+        let _mock2 = mockito::mock(
+            "GET", mockito::Matcher::Regex(r"^/instruments".to_string())
+        )
+        .with_body_from_file("mocks/instruments.csv")
+        .create();
+
+        let data: json::Value = kiteconnect.instruments(None).unwrap();
+        println!("{:?}", data);
+        assert_eq!(data[0]["instrument_token"].as_str(), Some("408065"));
+    }
+
+    #[test]
+    fn test_mf_instruments() {
+        let kiteconnect = KiteConnect::new("API_KEY", "ACCESS_TOKEN");
+
+        let _mock2 = mockito::mock(
+            "GET", mockito::Matcher::Regex(r"^/mf/instruments".to_string())
+        )
+        .with_body_from_file("mocks/mf_instruments.csv")
+        .create();
+
+        let data: json::Value = kiteconnect.mf_instruments().unwrap();
+        println!("{:?}", data);
+        assert_eq!(data[0]["tradingsymbol"].as_str(), Some("INF846K01DP8"));
     }
 }
