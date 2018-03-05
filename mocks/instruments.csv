@@ -1,0 +1,5 @@
+instrument_token, exchange_token, tradingsymbol, name, last_price, expiry, strike, tick_size, lot_size, instrument_type, segment, exchange
+408065,1594,INFY,INFOSYS,0,,,0.05,1,EQ,NSE,NSE
+5720322,22345,NIFTY15DECFUT,,78.0,2015-12-31,,0.05,75,FUT,NFO-FUT,NFO
+5720578,22346,NIFTY159500CE,,23.0,2015-12-31,9500,0.05,75,CE,NFO-OPT,NFO
+645639,22347,SILVER15DECFUT,,7800.0,2015-12-31,,1,1,FUT,MCX,MCX
