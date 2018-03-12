@@ -287,7 +287,7 @@ dependencies = [
 
 [[package]]
 name = "kiteconnect"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "byteorder 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "csv 1.0.0-beta.5 (registry+https://github.com/rust-lang/crates.io-index)",

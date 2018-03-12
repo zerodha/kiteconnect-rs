@@ -75,7 +75,7 @@ fn main() {
         count: 0
     };
 
-    ticker.connect(custom_handler);
+    ticker.connect(custom_handler, None);
 
     loop {}
 }

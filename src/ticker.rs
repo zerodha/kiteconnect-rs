@@ -331,7 +331,7 @@ impl KiteTicker {
 
     /// Creates a websocket and delegates to it to child thread. Also sets the
     /// broadcaster so that other methods can easily send message on this socket
-    pub fn connect<F>(&mut self, handler: F) -> Result<()>
+    pub fn connect<F>(&mut self, handler: F, uri: Option<&str>) -> Result<()>
         where F: KiteTickerHandler + Send + 'static {
         let factory = WebSocketFactory {
             handler: Arc::new(Mutex::new(Box::new(handler)))
@@ -339,7 +339,11 @@ impl KiteTicker {
         let mut ws = WebSocket::new(factory).unwrap();
         let sender = ws.broadcaster();
         let socket_url = format!(
-            "wss://ws.kite.trade?api_key={}&access_token={}",
+            "wss://{}?api_key={}&access_token={}",
+            match uri {
+                Some(uri) => uri,
+                None => "ws.kite.trade"
+            },
             self.api_key,
             self.access_token
         );
@@ -353,4 +357,38 @@ impl KiteTicker {
         Ok(())
     }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use ws::listen;
+
+    struct Server {
+        out: Sender,
+    }
+
+    impl Handler for Server {
+        fn on_message(&mut self, msg: Message) -> Result<()> {
+            let message = msg.clone();
+            assert_eq!(message.into_text().unwrap(), "PING".to_string());
+            self.out.send(msg)
+        }
+    }
+
+    #[test]
+    fn test_kite_ticker() {
+        thread::spawn(move || {
+            listen("127.0.0.1:3012", |out| {
+                Server { out: out }
+            }).unwrap()
+        });
+
+        struct MyHandler;
+        impl KiteTickerHandler for MyHandler {}
+        let mut kiteticker = KiteTicker::new("<API-KEY>", "<ACCESS-TOKEN>");
+        kiteticker.connect(MyHandler{}, Some("127.0.0.1:3012"));
+        kiteticker.sender.unwrap().send("PING");
+    }
 }
