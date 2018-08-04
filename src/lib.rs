@@ -1,7 +1,5 @@
 #[macro_use]
 extern crate error_chain;
-#[macro_use]
-extern crate hyper;
 extern crate reqwest;
 extern crate serde;
 #[macro_use]

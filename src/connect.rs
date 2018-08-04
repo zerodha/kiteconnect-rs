@@ -6,7 +6,6 @@
 //         unused_import_braces, unused_qualifications)]
 //
 use error_chain;
-use hyper;
 use reqwest;
 use serde;
 use serde_json as json;
@@ -20,10 +19,7 @@ use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use csv::ReaderBuilder;
 
-use hyper::header::Headers;
-header! { (XKiteVersion, "X-Kite-Version") => [String] }
-header! { (UserAgent, "User-Agent") => [String] }
-header! { (Authorization, "Authorization") => [String] }
+use reqwest::header::{Headers, Authorization, UserAgent};
 
 #[cfg(not(test))]
 const URL: &'static str = "https://api.kite.trade";
@@ -686,9 +682,10 @@ impl RequestHandler for KiteConnect {
         data: Option<HashMap<&str, &str>>,
     ) -> Result<reqwest::Response> {
         let mut headers = Headers::new();
-        headers.set(XKiteVersion("3".to_string()));
+        headers.set_raw("XKiteVersion", "3");
         headers.set(Authorization(format!("token {}:{}", self.api_key, self.access_token)));
-        headers.set(UserAgent("Rust".to_string()));
+        headers.set(UserAgent::new("Rust"));
+
         let client = reqwest::Client::new();
 
         match method {
