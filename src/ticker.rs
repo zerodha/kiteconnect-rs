@@ -6,7 +6,7 @@
 //         unused_import_braces, unused_qualifications)]
 //
 use std::thread;
-use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::io::{Cursor, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
@@ -17,30 +17,28 @@ use ws::{
 use byteorder::{BigEndian, ReadBytesExt};
 use url;
 use serde_json as json;
-use log;
-
 
 /// KiteTickerHandler lets the user write the business logic inside
 /// the corresponding callbacks which are basically proxied from the
 /// Handler callbacks
 pub trait KiteTickerHandler {
 
-    fn on_open<T>(&mut self, ws: &mut WebSocketHandler<T>)
+    fn on_open<T>(&mut self, _ws: &mut WebSocketHandler<T>)
     where T: KiteTickerHandler {
         debug!("Connection opened");
     }
 
-    fn on_ticks<T>(&mut self, ws: &mut WebSocketHandler<T>, tick: Vec<json::Value>)
+    fn on_ticks<T>(&mut self, _ws: &mut WebSocketHandler<T>, tick: Vec<json::Value>)
     where T: KiteTickerHandler {
         debug!("{:?}", tick);
     }
 
-    fn on_close<T>(&mut self, ws: &mut WebSocketHandler<T>)
+    fn on_close<T>(&mut self, _ws: &mut WebSocketHandler<T>)
     where T: KiteTickerHandler {
         debug!("Connection closed");
     }
 
-    fn on_error<T>(&mut self, ws: &mut WebSocketHandler<T>)
+    fn on_error<T>(&mut self, _ws: &mut WebSocketHandler<T>)
     where T: KiteTickerHandler {
         debug!("Error");
     }
@@ -94,7 +92,7 @@ impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
         }
         match self.ws {
             Some(ref s) => {
-                s.send(data.to_string());
+                s.send(data.to_string())?;
                 Ok(())
             },
             None => {
@@ -114,7 +112,7 @@ impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
         }
         match self.ws {
             Some(ref s) => {
-                s.send(data.to_string());
+                s.send(data.to_string())?;
                 Ok(())
             },
             None => {
@@ -124,16 +122,17 @@ impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
     }
 
     /// Resubscribe to all current subscribed tokens
-    pub fn resubscribe(&mut self) {
+    pub fn resubscribe(&mut self) -> Result<()> {
         let mut modes: HashMap<String, Vec<u32>> = HashMap::new();
         for (token, mode) in self.subscribed_tokens.iter() {
             modes.entry(mode.clone()).or_insert(vec![]).push(token.clone());
         }
         for (mode, tokens) in modes.iter() {
             debug!("Resubscribing and set mode: {} - {:?}", mode, tokens);
-            self.subscribe(tokens.clone());
-            self.set_mode(mode.as_str(), tokens.clone());
+            self.subscribe(tokens.clone())?;
+            self.set_mode(mode.as_str(), tokens.clone())?;
         }
+        Ok(())
     }
 
     /// Set streaming mode for the given list of tokens.
@@ -147,7 +146,7 @@ impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
         }
         match self.ws {
             Some(ref s) => {
-                s.send(data.to_string());
+                s.send(data.to_string())?;
                 Ok(())
             }
             None => {
@@ -156,7 +155,6 @@ impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
         }
     }
 }
-
 
 /// Implements the Handler trait on KiteTicker which provides all the
 /// callbacks methods ws-rs library
@@ -168,7 +166,7 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
         Ok(req)
     }
 
-    fn on_open(&mut self, shake: Handshake) -> Result<()> {
+    fn on_open(&mut self, _shake: Handshake) -> Result<()> {
         let cloned_handler = self.handler.clone();
         cloned_handler.lock().unwrap().on_open(self);
         debug!("Connection opened!");
@@ -183,7 +181,7 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
             let mut tick_data: Vec<json::Value> = Vec::new();
             for packet_index in 0..number_of_packets {
                 let packet_length = reader.read_i16::<BigEndian>().unwrap();
-                reader.seek(SeekFrom::Start(4 * (packet_index + 1) as u64));
+                reader.seek(SeekFrom::Start(4 * (packet_index + 1) as u64))?;
                 let instrument_token = reader.read_i32::<BigEndian>().unwrap();
                 let segment = instrument_token & 0xff;
                 let mut divisor: f64 = 100.0;
@@ -203,12 +201,11 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
                         "last_price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
                     });
                 } else if packet_length == 28 || packet_length == 32 {
-                    let mut mode = "quote";
-                    if packet_length == 28 {
-                        mode = "full";
-                    } else {
-                        mode = "quote";
-                    }
+                    let mode = match packet_length {
+                        28 => "full",
+                        _ => "quote",
+                    };
+
                     data = json!({
                         "tradable": tradable,
                         "mode": mode,
@@ -231,12 +228,11 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
                         data["timestamp"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64 / divisor);
                     }
                 } else if packet_length == 44 || packet_length == 184 {
-                    let mut mode = "quote";
-                    if packet_length == 184 {
-                        mode = "full";
-                    } else {
-                        mode = "quote";
-                    }
+                    let mode = match packet_length {
+                        184 => "full",
+                        _ => "quote",
+                    };
+
                     data = json!({
                         "tradable": tradable,
                         "mode": mode,
@@ -295,7 +291,7 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
         Ok(())
     }
 
-    fn on_close(&mut self, code: CloseCode, reason: &str) {
+    fn on_close(&mut self, code: CloseCode, _reason: &str) {
         let cloned_handler = self.handler.clone();
         cloned_handler.lock().unwrap().on_close(self);
         debug!("Connection closed {:?}", code);
