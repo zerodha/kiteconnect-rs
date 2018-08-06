@@ -5,11 +5,9 @@
 //         unstable_features,
 //         unused_import_braces, unused_qualifications)]
 //
-use error_chain;
 use reqwest;
-use serde;
 use serde_json as json;
-use serde_derive;
+
 #[cfg(test)]
 use mockito;
 
