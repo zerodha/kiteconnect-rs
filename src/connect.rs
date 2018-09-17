@@ -5,12 +5,9 @@
 //         unstable_features,
 //         unused_import_braces, unused_qualifications)]
 //
-use error_chain;
-use hyper;
 use reqwest;
-use serde;
 use serde_json as json;
-use serde_derive;
+
 #[cfg(test)]
 use mockito;
 
@@ -20,10 +17,7 @@ use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use csv::ReaderBuilder;
 
-use hyper::header::Headers;
-header! { (XKiteVersion, "X-Kite-Version") => [String] }
-header! { (UserAgent, "User-Agent") => [String] }
-header! { (Authorization, "Authorization") => [String] }
+use reqwest::header::{Headers, Authorization, UserAgent};
 
 #[cfg(not(test))]
 const URL: &'static str = "https://api.kite.trade";
@@ -601,37 +595,28 @@ impl KiteConnect {
 
     /// Retrieve quote for list of instruments
     pub fn quote(&self, instruments: Vec<&str>) -> Result<json::Value> {
-        let instruments: String = instruments.join(",");
-        let instruments = format!("[{}]", instruments.as_str());
-        let mut params = HashMap::new();
-        params.insert("i", instruments.as_str());
-        let url = self.build_url("/quote", None);
+        let params: Vec<_> = instruments.into_iter().map(|i| ("i", i)).collect();
+        let url = self.build_url("/quote", Some(params));
 
-        let mut resp = self.send_request(url, "GET", Some(params))?;
+        let mut resp = self.send_request(url, "GET", None)?;
         self._raise_or_return_json(&mut resp)
     }
 
     /// Retreive OHLC and market depth for list of instruments
     pub fn ohlc(&self, instruments: Vec<&str>) -> Result<json::Value> {
-        let instruments: String = instruments.join(",");
-        let instruments = format!("[{}]", instruments.as_str());
-        let mut params = HashMap::new();
-        params.insert("i", instruments.as_str());
-        let url = self.build_url("/quote/ohlc", None);
+        let params: Vec<_> = instruments.into_iter().map(|i| ("i", i)).collect();
+        let url = self.build_url("/quote/ohlc", Some(params));
 
-        let mut resp = self.send_request(url, "GET", Some(params))?;
+        let mut resp = self.send_request(url, "GET", None)?;
         self._raise_or_return_json(&mut resp)
     }
 
     /// Retreive last price for list of instuments
     pub fn ltp(&self, instruments: Vec<&str>) -> Result<json::Value> {
-        let instruments: String = instruments.join(",");
-        let instruments = format!("[{}]", instruments.as_str());
-        let mut params = HashMap::new();
-        params.insert("i", instruments.as_str());
-        let url = self.build_url("/quote/ltp", None);
+        let params: Vec<_> = instruments.into_iter().map(|i| ("i", i)).collect();
+        let url = self.build_url("/quote/ltp", Some(params));
 
-        let mut resp = self.send_request(url, "GET", Some(params))?;
+        let mut resp = self.send_request(url, "GET", None)?;
         self._raise_or_return_json(&mut resp)
     }
 
@@ -665,13 +650,10 @@ impl KiteConnect {
     }
 
     pub fn trigger_range(&self, transaction_type: &str, instruments: Vec<&str>) -> Result<json::Value> {
-        let instruments: String = instruments.join(",");
-        let instruments = format!("[{}]", instruments.as_str());
-        let mut params = HashMap::new();
-        params.insert("i", instruments.as_str());
-        let url = self.build_url(format!("/instruments/trigger_range/{}", transaction_type).as_str(), None);
+        let params: Vec<_> = instruments.into_iter().map(|i| ("i", i)).collect();
+        let url = self.build_url(format!("/instruments/trigger_range/{}", transaction_type).as_str(), Some(params));
 
-        let mut resp = self.send_request(url, "GET", Some(params))?;
+        let mut resp = self.send_request(url, "GET", None)?;
         self._raise_or_return_json(&mut resp)
     }
 }
@@ -686,9 +668,10 @@ impl RequestHandler for KiteConnect {
         data: Option<HashMap<&str, &str>>,
     ) -> Result<reqwest::Response> {
         let mut headers = Headers::new();
-        headers.set(XKiteVersion("3".to_string()));
+        headers.set_raw("XKiteVersion", "3");
         headers.set(Authorization(format!("token {}:{}", self.api_key, self.access_token)));
-        headers.set(UserAgent("Rust".to_string()));
+        headers.set(UserAgent::new("Rust"));
+
         let client = reqwest::Client::new();
 
         match method {

@@ -1,6 +1,6 @@
 [package]
 name = "kiteconnect"
-version = "0.2.3"
+version = "0.2.4"
 authors = ["Joe Paul <joeirimpan@gmail.com>"]
 description = "RUST API wrapper for kiteconnect APIs"
 license = "MIT"
@@ -8,11 +8,10 @@ repository = "https://github.com/zerodhatech/kiteconnect-rust"
 
 [dependencies]
 reqwest = "0.8.1"
-hyper = "0.11.6"
 serde = "1.0.24"
 serde_derive = "1.0.27"
 serde_json = "1.0"
-error-chain = "0.11.0"
+error-chain = "0.12.0"
 rust-crypto = "0.2.36"
 url = "1.5"
 byteorder = "1.2.1"
