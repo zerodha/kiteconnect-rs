@@ -595,37 +595,28 @@ impl KiteConnect {
 
     /// Retrieve quote for list of instruments
     pub fn quote(&self, instruments: Vec<&str>) -> Result<json::Value> {
-        let instruments: String = instruments.join(",");
-        let instruments = format!("[{}]", instruments.as_str());
-        let mut params = HashMap::new();
-        params.insert("i", instruments.as_str());
-        let url = self.build_url("/quote", None);
+        let params: Vec<_> = instruments.into_iter().map(|i| ("i", i)).collect();
+        let url = self.build_url("/quote", Some(params));
 
-        let mut resp = self.send_request(url, "GET", Some(params))?;
+        let mut resp = self.send_request(url, "GET", None)?;
         self._raise_or_return_json(&mut resp)
     }
 
     /// Retreive OHLC and market depth for list of instruments
     pub fn ohlc(&self, instruments: Vec<&str>) -> Result<json::Value> {
-        let instruments: String = instruments.join(",");
-        let instruments = format!("[{}]", instruments.as_str());
-        let mut params = HashMap::new();
-        params.insert("i", instruments.as_str());
-        let url = self.build_url("/quote/ohlc", None);
+        let params: Vec<_> = instruments.into_iter().map(|i| ("i", i)).collect();
+        let url = self.build_url("/quote/ohlc", Some(params));
 
-        let mut resp = self.send_request(url, "GET", Some(params))?;
+        let mut resp = self.send_request(url, "GET", None)?;
         self._raise_or_return_json(&mut resp)
     }
 
     /// Retreive last price for list of instuments
     pub fn ltp(&self, instruments: Vec<&str>) -> Result<json::Value> {
-        let instruments: String = instruments.join(",");
-        let instruments = format!("[{}]", instruments.as_str());
-        let mut params = HashMap::new();
-        params.insert("i", instruments.as_str());
-        let url = self.build_url("/quote/ltp", None);
+        let params: Vec<_> = instruments.into_iter().map(|i| ("i", i)).collect();
+        let url = self.build_url("/quote/ltp", Some(params));
 
-        let mut resp = self.send_request(url, "GET", Some(params))?;
+        let mut resp = self.send_request(url, "GET", None)?;
         self._raise_or_return_json(&mut resp)
     }
 
@@ -659,13 +650,10 @@ impl KiteConnect {
     }
 
     pub fn trigger_range(&self, transaction_type: &str, instruments: Vec<&str>) -> Result<json::Value> {
-        let instruments: String = instruments.join(",");
-        let instruments = format!("[{}]", instruments.as_str());
-        let mut params = HashMap::new();
-        params.insert("i", instruments.as_str());
-        let url = self.build_url(format!("/instruments/trigger_range/{}", transaction_type).as_str(), None);
+        let params: Vec<_> = instruments.into_iter().map(|i| ("i", i)).collect();
+        let url = self.build_url(format!("/instruments/trigger_range/{}", transaction_type).as_str(), Some(params));
 
-        let mut resp = self.send_request(url, "GET", Some(params))?;
+        let mut resp = self.send_request(url, "GET", None)?;
         self._raise_or_return_json(&mut resp)
     }
 }
