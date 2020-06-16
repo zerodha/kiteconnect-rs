@@ -312,7 +312,7 @@ impl KiteConnect {
 
         let url = self.build_url(format!("/orders/{}/{}", variety, order_id).as_str(), None);
 
-        let mut resp = self.send_request(url, "POST", Some(params))?;
+        let mut resp = self.send_request(url, "PUT", Some(params))?;
         self._raise_or_return_json(&mut resp)
     }
 
