@@ -678,7 +678,7 @@ impl RequestHandler for KiteConnect {
             "GET" => Ok(client.get(url).headers(headers).send()?),
             "POST" => Ok(client.post(url).headers(headers).form(&data).send()?),
             "DELETE" => Ok(client.delete(url).headers(headers).json(&data).send()?),
-            "PUT" => Ok(client.put(url).headers(headers).json(&data).send()?),
+            "PUT" => Ok(client.put(url).headers(headers).form(&data).send()?),
             _ => Err(ErrorKind::KiteException("Unknown method".to_string()).into()),
         }
     }
