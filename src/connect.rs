@@ -312,7 +312,7 @@ impl KiteConnect {
 
         let url = self.build_url(format!("/orders/{}/{}", variety, order_id).as_str(), None);
 
-        let mut resp = self.send_request(url, "POST", Some(params))?;
+        let mut resp = self.send_request(url, "PUT", Some(params))?;
         self._raise_or_return_json(&mut resp)
     }
 
@@ -678,7 +678,7 @@ impl RequestHandler for KiteConnect {
             "GET" => Ok(client.get(url).headers(headers).send()?),
             "POST" => Ok(client.post(url).headers(headers).form(&data).send()?),
             "DELETE" => Ok(client.delete(url).headers(headers).json(&data).send()?),
-            "PUT" => Ok(client.put(url).headers(headers).json(&data).send()?),
+            "PUT" => Ok(client.put(url).headers(headers).form(&data).send()?),
             _ => Err(ErrorKind::KiteException("Unknown method".to_string()).into()),
         }
     }
