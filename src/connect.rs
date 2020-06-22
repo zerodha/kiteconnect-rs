@@ -17,7 +17,7 @@ use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use csv::ReaderBuilder;
 
-use reqwest::header::{Headers, Authorization, UserAgent};
+use reqwest::header::{HeaderMap, AUTHORIZATION, USER_AGENT};
 
 #[cfg(not(test))]
 const URL: &'static str = "https://api.kite.trade";
@@ -667,10 +667,10 @@ impl RequestHandler for KiteConnect {
         method: &str,
         data: Option<HashMap<&str, &str>>,
     ) -> Result<reqwest::Response> {
-        let mut headers = Headers::new();
-        headers.set_raw("XKiteVersion", "3");
-        headers.set(Authorization(format!("token {}:{}", self.api_key, self.access_token)));
-        headers.set(UserAgent::new("Rust"));
+        let mut headers = HeaderMap::new();
+        headers.insert("XKiteVersion", "3".parse().unwrap());
+        headers.insert(AUTHORIZATION, format!("token {}:{}", self.api_key, self.access_token).parse().unwrap());
+        headers.insert(USER_AGENT, "Rust".parse().unwrap());
 
         let client = reqwest::Client::new();
 
