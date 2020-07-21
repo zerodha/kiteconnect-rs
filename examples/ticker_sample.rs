@@ -37,6 +37,7 @@ impl KiteTickerHandler for CustomHandler {
 }
 
 fn main() {
+    // Assumes you have generated the access token beforehand.
     let mut ticker = KiteTicker::new("<API-KEY>", "<ACCESS-TOKEN>");
 
     let custom_handler = CustomHandler {
