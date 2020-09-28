@@ -563,7 +563,7 @@ impl KiteConnect {
     pub fn instruments(&self, exchange: Option<&str>) -> Result<json::Value> {
         let url: reqwest::Url;
         if exchange.is_some() {
-            url = self.build_url(format!("/instruments{}", exchange.unwrap()).as_str(), None);
+            url = self.build_url(format!("/instruments/{}", exchange.unwrap()).as_str(), None);
         } else {
             url = self.build_url("/instruments", None);
         }
