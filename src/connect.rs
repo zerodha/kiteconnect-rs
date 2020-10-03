@@ -6,7 +6,8 @@
 //         unused_import_braces, unused_qualifications)]
 //
 use reqwest;
-use serde_json as json;
+use serde_json::{json, Value as JsonValue};
+use anyhow::{anyhow, Context, Result};
 
 #[cfg(test)]
 use mockito;
@@ -32,24 +33,7 @@ trait RequestHandler {
         url: reqwest::Url,
         method: &str,
         data: Option<HashMap<&str, &str>>
-    ) -> Result<reqwest::Response> {
-        unimplemented!()
-    }
-}
-
-error_chain! {
-    foreign_links {
-        Network(reqwest::Error);
-        Io(::std::io::Error);
-        Json(json::Error);
-    }
-    errors {
-        KiteException(e: String){
-            description("Gateway error"),
-            display("{}", e),
-        }
-    }
-
+    ) -> Result<reqwest::Response>;
 }
 
 pub struct KiteConnect {
@@ -92,12 +76,12 @@ impl KiteConnect {
     }
 
     /// Raise or return json response for a given response
-    fn _raise_or_return_json(&self, resp: &mut reqwest::Response) -> Result<json::Value> {
-        if resp.status().as_u16() == 200 {
-            let jsn: json::Value = resp.json()?;
+    fn _raise_or_return_json(&self, resp: &mut reqwest::Response) -> Result<JsonValue> {
+        if resp.status().is_success() {
+            let jsn: JsonValue = resp.json().with_context(|| "Serialization failed")?;
             Ok(jsn)
         } else {
-            Err(ErrorKind::KiteException(format!("{}", resp.text()?)).into())
+            Err(anyhow!("Request failed!"))
         }
     }
 
@@ -121,7 +105,7 @@ impl KiteConnect {
         &mut self,
         request_token: &str,
         api_secret: &str
-    ) -> Result<json::Value> {
+    ) -> Result<JsonValue> {
         // Create a hex digest from api key, request token, api secret
         let mut sha = Sha256::new();
         sha.input_str(
@@ -140,11 +124,11 @@ impl KiteConnect {
         let mut resp = self.send_request(url, "POST", Some(data))?;
 
         if resp.status().as_u16() == 200 {
-            let jsn: json::Value = resp.json()?;
+            let jsn: JsonValue = resp.json()?;
             self.set_access_token(jsn["data"]["access_token"].as_str().unwrap());
             Ok(jsn)
         } else {
-            Err(ErrorKind::KiteException(format!("{}", resp.text()?)).into())
+            Err(anyhow!("Session generation failed!"))
         }
     }
 
@@ -162,7 +146,7 @@ impl KiteConnect {
         &mut self,
         access_token: &str,
         api_secret: &str
-    ) -> Result<json::Value> {
+    ) -> Result<JsonValue> {
         // Create a hex digest from api key, request token, api secret
         let mut sha = Sha256::new();
         sha.input_str(
@@ -181,11 +165,11 @@ impl KiteConnect {
         let mut resp = self.send_request(url, "POST", Some(data))?;
 
         if resp.status().as_u16() == 200 {
-            let jsn: json::Value = resp.json()?;
+            let jsn: JsonValue = resp.json()?;
             self.set_access_token(jsn["access_token"].as_str().unwrap());
             Ok(jsn)
         } else {
-            Err(ErrorKind::KiteException(format!("{}", resp.text()?)).into())
+            Err(anyhow!("Couldn't renew access token!"))
         }
     }
 
@@ -200,7 +184,7 @@ impl KiteConnect {
 
     /// Return the account balance and cash margin details for
     /// a particular segment
-    pub fn margins(&self, segment: Option<String>) -> Result<json::Value> {
+    pub fn margins(&self, segment: Option<String>) -> Result<JsonValue> {
         let url: reqwest::Url;
         if segment.is_some() {
             url = self.build_url(format!("/user/margins/{}", segment.unwrap().as_str()).as_str(), None)
@@ -213,7 +197,7 @@ impl KiteConnect {
     }
 
     /// Get all holdings
-    pub fn holdings(&self) -> Result<json::Value> {
+    pub fn holdings(&self) -> Result<JsonValue> {
         let url = self.build_url("/portfolio/holdings", None);
 
         let mut resp = self.send_request(url, "GET", None)?;
@@ -221,7 +205,7 @@ impl KiteConnect {
     }
 
     /// Get all positions
-    pub fn positions(&self) -> Result<json::Value> {
+    pub fn positions(&self) -> Result<JsonValue> {
         let url = self.build_url("/portfolio/positions", None);
 
         let mut resp = self.send_request(url, "GET", None)?;
@@ -229,7 +213,7 @@ impl KiteConnect {
     }
 
     /// Get user profile details
-    pub fn profile(&self) -> Result<json::Value> {
+    pub fn profile(&self) -> Result<JsonValue> {
         let url = self.build_url("/user/profile", None);
 
         let mut resp = self.send_request(url, "GET", None)?;
@@ -254,7 +238,7 @@ impl KiteConnect {
         stoploss: Option<&str>,
         trailing_stoploss: Option<&str>,
         tag: Option<&str>,
-    ) -> Result<json::Value> {
+    ) -> Result<JsonValue> {
         let mut params = HashMap::new();
         params.insert("exchange", exchange);
         params.insert("tradingsymbol", tradingsymbol);
@@ -294,7 +278,7 @@ impl KiteConnect {
         trigger_price: Option<&str>,
         validity: Option<&str>,
         disclosed_quantity: Option<&str>,
-    ) -> Result<json::Value> {
+    ) -> Result<JsonValue> {
         let mut params = HashMap::new();
         params.insert("order_id", order_id);
         params.insert("variety", variety);
@@ -322,7 +306,7 @@ impl KiteConnect {
         order_id: &str,
         variety: &str,
         parent_order_id: Option<&str>,
-    ) -> Result<json::Value> {
+    ) -> Result<JsonValue> {
         let mut params = HashMap::new();
         params.insert("order_id", order_id);
         params.insert("variety", variety);
@@ -339,12 +323,12 @@ impl KiteConnect {
         order_id: &str,
         variety: &str,
         parent_order_id: Option<&str>,
-    ) -> Result<json::Value> {
+    ) -> Result<JsonValue> {
         self.cancel_order(order_id, variety, parent_order_id)
     }
 
     /// Get a list of orders
-    pub fn orders(&self) -> Result<json::Value> {
+    pub fn orders(&self) -> Result<JsonValue> {
         let url = self.build_url("/orders", None);
 
         let mut resp = self.send_request(url, "GET", None)?;
@@ -352,7 +336,7 @@ impl KiteConnect {
     }
 
     /// Get the list of order history
-    pub fn order_history(&self, order_id: &str) -> Result<json::Value> {
+    pub fn order_history(&self, order_id: &str) -> Result<JsonValue> {
         let mut params: Vec<(&str, &str)> = Vec::new();
         params.push(("order_id", order_id));
 
@@ -363,7 +347,7 @@ impl KiteConnect {
     }
 
     /// Get all trades
-    pub fn trades(&self) -> Result<json::Value> {
+    pub fn trades(&self) -> Result<JsonValue> {
         let url = self.build_url("/trades", None);
 
         let mut resp = self.send_request(url, "GET", None)?;
@@ -371,7 +355,7 @@ impl KiteConnect {
     }
 
     /// Get all trades
-    pub fn order_trades(&self, order_id: &str) -> Result<json::Value> {
+    pub fn order_trades(&self, order_id: &str) -> Result<JsonValue> {
         let url = self.build_url(format!("/orders/{}/trades", order_id).as_str(), None);
 
         let mut resp = self.send_request(url, "GET", None)?;
@@ -388,7 +372,7 @@ impl KiteConnect {
         quantity: &str,
         old_product: &str,
         new_product: &str,
-    ) -> Result<json::Value> {
+    ) -> Result<JsonValue> {
         let mut params = HashMap::new();
         params.insert("exchange", exchange);
         params.insert("tradingsymbol", tradingsymbol);
@@ -405,7 +389,7 @@ impl KiteConnect {
     }
 
     /// Get all mutual fund orders or individual order info
-    pub fn mf_orders(&self, order_id: Option<&str>) -> Result<json::Value> {
+    pub fn mf_orders(&self, order_id: Option<&str>) -> Result<JsonValue> {
         let url: reqwest::Url;
         if order_id.is_some() {
             url = self.build_url(format!("/mf/orders/{}", order_id.unwrap()).as_str(), None);
@@ -425,7 +409,7 @@ impl KiteConnect {
         quantity: Option<&str>,
         amount: Option<&str>,
         tag: Option<&str>
-    ) -> Result<json::Value> {
+    ) -> Result<JsonValue> {
         let mut params = HashMap::new();
         params.insert("tradingsymbol", tradingsymbol);
         params.insert("transaction_type", transaction_type);
@@ -440,7 +424,7 @@ impl KiteConnect {
     }
 
     /// Cancel a mutual fund order
-    pub fn cancel_mf_order(&self, order_id: &str) -> Result<json::Value> {
+    pub fn cancel_mf_order(&self, order_id: &str) -> Result<JsonValue> {
         let url = self.build_url(format!("/mf/orders/{}", order_id).as_str(), None);
 
         let mut resp = self.send_request(url, "DELETE", None)?;
@@ -448,7 +432,7 @@ impl KiteConnect {
     }
 
     /// Get list of mutual fund SIP's or individual SIP info
-    pub fn mf_sips(&self, sip_id: Option<&str>) -> Result<json::Value> {
+    pub fn mf_sips(&self, sip_id: Option<&str>) -> Result<JsonValue> {
         let url: reqwest::Url;
         if sip_id.is_some() {
             url = self.build_url(format!("/mf/sips/{}", sip_id.unwrap()).as_str(), None);
@@ -470,7 +454,7 @@ impl KiteConnect {
         initial_amount: Option<&str>,
         instalment_day: Option<&str>,
         tag: Option<&str>
-    ) -> Result<json::Value> {
+    ) -> Result<JsonValue> {
         let mut params = HashMap::new();
         params.insert("tradingsymbol", tradingsymbol);
         params.insert("amount", amount);
@@ -495,7 +479,7 @@ impl KiteConnect {
         instalments: &str,
         frequency: &str,
         instalment_day: Option<&str>,
-    ) -> Result<json::Value> {
+    ) -> Result<JsonValue> {
         let mut params = HashMap::new();
         params.insert("sip_id", sip_id);
         params.insert("amount", amount);
@@ -511,7 +495,7 @@ impl KiteConnect {
     }
 
     /// Cancel a mutual fund SIP
-    pub fn cancel_mf_sip(&self, sip_id: &str) -> Result<json::Value> {
+    pub fn cancel_mf_sip(&self, sip_id: &str) -> Result<JsonValue> {
         let url = self.build_url(format!("/mf/sips/{}", sip_id).as_str(), None);
 
         let mut resp = self.send_request(url, "DELETE", None)?;
@@ -519,7 +503,7 @@ impl KiteConnect {
     }
 
     /// Get a list of mutual fund holdings
-    pub fn mf_holdings(&self) -> Result<json::Value> {
+    pub fn mf_holdings(&self) -> Result<JsonValue> {
         let url = self.build_url("/mf/holdings", None);
 
         let mut resp = self.send_request(url, "GET", None)?;
@@ -527,13 +511,13 @@ impl KiteConnect {
     }
 
     /// Get list of mutual fund instruments
-    pub fn mf_instruments(&self) -> Result<json::Value> {
+    pub fn mf_instruments(&self) -> Result<JsonValue> {
         let url = self.build_url("/mf/instruments", None);
 
         let mut resp: reqwest::Response = self.send_request(url, "GET", None).unwrap();
         let content: String = resp.text().unwrap();
         let mut csv_reader = ReaderBuilder::new().from_reader(content.as_bytes());
-        let mut mf_instruments: Vec<json::Value> = Vec::new();
+        let mut mf_instruments: Vec<JsonValue> = Vec::new();
         for record in csv_reader.records() {
             let mf_instrument = record.unwrap();
             mf_instruments.push(json!({
@@ -560,7 +544,7 @@ impl KiteConnect {
     }
 
     /// Retrieve the list of market instruments available to trade
-    pub fn instruments(&self, exchange: Option<&str>) -> Result<json::Value> {
+    pub fn instruments(&self, exchange: Option<&str>) -> Result<JsonValue> {
         let url: reqwest::Url;
         if exchange.is_some() {
             url = self.build_url(format!("/instruments/{}", exchange.unwrap()).as_str(), None);
@@ -571,7 +555,7 @@ impl KiteConnect {
         let mut resp: reqwest::Response = self.send_request(url, "GET", None).unwrap();
         let content: String = resp.text().unwrap();
         let mut csv_reader = ReaderBuilder::new().from_reader(content.as_bytes());
-        let mut instruments: Vec<json::Value> = Vec::new();
+        let mut instruments: Vec<JsonValue> = Vec::new();
         for record in csv_reader.records() {
             let instrument = record.unwrap();
             instruments.push(json!({
@@ -594,7 +578,7 @@ impl KiteConnect {
     }
 
     /// Retrieve quote for list of instruments
-    pub fn quote(&self, instruments: Vec<&str>) -> Result<json::Value> {
+    pub fn quote(&self, instruments: Vec<&str>) -> Result<JsonValue> {
         let params: Vec<_> = instruments.into_iter().map(|i| ("i", i)).collect();
         let url = self.build_url("/quote", Some(params));
 
@@ -603,7 +587,7 @@ impl KiteConnect {
     }
 
     /// Retreive OHLC and market depth for list of instruments
-    pub fn ohlc(&self, instruments: Vec<&str>) -> Result<json::Value> {
+    pub fn ohlc(&self, instruments: Vec<&str>) -> Result<JsonValue> {
         let params: Vec<_> = instruments.into_iter().map(|i| ("i", i)).collect();
         let url = self.build_url("/quote/ohlc", Some(params));
 
@@ -612,7 +596,7 @@ impl KiteConnect {
     }
 
     /// Retreive last price for list of instuments
-    pub fn ltp(&self, instruments: Vec<&str>) -> Result<json::Value> {
+    pub fn ltp(&self, instruments: Vec<&str>) -> Result<JsonValue> {
         let params: Vec<_> = instruments.into_iter().map(|i| ("i", i)).collect();
         let url = self.build_url("/quote/ltp", Some(params));
 
@@ -621,7 +605,7 @@ impl KiteConnect {
     }
 
     /// Retreive margins provided for individual segments
-    pub fn instruments_margins(&self, segment: &str) -> Result<json::Value> {
+    pub fn instruments_margins(&self, segment: &str) -> Result<JsonValue> {
         let url = self.build_url(format!("/margins/{}", segment).as_str(), None);
 
         let mut resp = self.send_request(url, "GET", None)?;
@@ -636,7 +620,7 @@ impl KiteConnect {
         to_date: &str,
         interval: &str,
         continuos: &str,
-    ) -> Result<json::Value> {
+    ) -> Result<JsonValue> {
         let mut params = HashMap::new();
         params.insert("instrument_token", instrument_token);
         params.insert("from", from_date);
@@ -649,7 +633,7 @@ impl KiteConnect {
         self._raise_or_return_json(&mut resp)
     }
 
-    pub fn trigger_range(&self, transaction_type: &str, instruments: Vec<&str>) -> Result<json::Value> {
+    pub fn trigger_range(&self, transaction_type: &str, instruments: Vec<&str>) -> Result<JsonValue> {
         let params: Vec<_> = instruments.into_iter().map(|i| ("i", i)).collect();
         let url = self.build_url(format!("/instruments/trigger_range/{}", transaction_type).as_str(), Some(params));
 
@@ -679,7 +663,7 @@ impl RequestHandler for KiteConnect {
             "POST" => Ok(client.post(url).headers(headers).form(&data).send()?),
             "DELETE" => Ok(client.delete(url).headers(headers).json(&data).send()?),
             "PUT" => Ok(client.put(url).headers(headers).form(&data).send()?),
-            _ => Err(ErrorKind::KiteException("Unknown method".to_string()).into()),
+            _ => Err(anyhow!("Unknown method!")),
         }
     }
 }
@@ -739,10 +723,10 @@ mod tests {
         .with_body_from_file("mocks/margins.json")
         .create();
 
-        let data: json::Value = kiteconnect.margins(None).unwrap();
+        let data: JsonValue = kiteconnect.margins(None).unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
-        let data: json::Value = kiteconnect.margins(Some("commodity".to_string())).unwrap();
+        let data: JsonValue = kiteconnect.margins(Some("commodity".to_string())).unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
     }
@@ -755,7 +739,7 @@ mod tests {
         .with_body_from_file("mocks/holdings.json")
         .create();
 
-        let data: json::Value = kiteconnect.holdings().unwrap();
+        let data: JsonValue = kiteconnect.holdings().unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
     }
@@ -768,7 +752,7 @@ mod tests {
         .with_body_from_file("mocks/positions.json")
         .create();
 
-        let data: json::Value = kiteconnect.positions().unwrap();
+        let data: JsonValue = kiteconnect.positions().unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
     }
@@ -783,7 +767,7 @@ mod tests {
         .with_body_from_file("mocks/order_trades.json")
         .create();
 
-        let data: json::Value = kiteconnect.order_trades("171229000724687").unwrap();
+        let data: JsonValue = kiteconnect.order_trades("171229000724687").unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
     }
@@ -796,9 +780,10 @@ mod tests {
             "GET", mockito::Matcher::Regex(r"^/orders".to_string())
         )
         .with_body_from_file("mocks/orders.json")
+        .with_status(200)
         .create();
 
-        let data: json::Value = kiteconnect.orders().unwrap();
+        let data: JsonValue = kiteconnect.orders().unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
     }
@@ -813,7 +798,7 @@ mod tests {
         .with_body_from_file("mocks/order_info.json")
         .create();
 
-        let data: json::Value = kiteconnect.order_history("171229000724687").unwrap();
+        let data: JsonValue = kiteconnect.order_history("171229000724687").unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
     }
@@ -826,7 +811,7 @@ mod tests {
         .with_body_from_file("mocks/trades.json")
         .create();
 
-        let data: json::Value = kiteconnect.trades().unwrap();
+        let data: JsonValue = kiteconnect.trades().unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
     }
@@ -847,10 +832,10 @@ mod tests {
         .with_body_from_file("mocks/mf_orders_info.json")
         .create();
 
-        let data: json::Value = kiteconnect.mf_orders(None).unwrap();
+        let data: JsonValue = kiteconnect.mf_orders(None).unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
-        let data: json::Value = kiteconnect.mf_orders(Some("171229000724687")).unwrap();
+        let data: JsonValue = kiteconnect.mf_orders(Some("171229000724687")).unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
     }
@@ -865,7 +850,7 @@ mod tests {
         .with_body_from_file("mocks/trigger_range.json")
         .create();
 
-        let data: json::Value = kiteconnect.trigger_range("BUY", vec!["NSE:INFY", "NSE:RELIANCE"]).unwrap();
+        let data: JsonValue = kiteconnect.trigger_range("BUY", vec!["NSE:INFY", "NSE:RELIANCE"]).unwrap();
         println!("{:?}", data);
         assert!(data.is_object());
     }
@@ -880,7 +865,7 @@ mod tests {
         .with_body_from_file("mocks/instruments.csv")
         .create();
 
-        let data: json::Value = kiteconnect.instruments(None).unwrap();
+        let data: JsonValue = kiteconnect.instruments(None).unwrap();
         println!("{:?}", data);
         assert_eq!(data[0]["instrument_token"].as_str(), Some("408065"));
     }
@@ -895,7 +880,7 @@ mod tests {
         .with_body_from_file("mocks/mf_instruments.csv")
         .create();
 
-        let data: json::Value = kiteconnect.mf_instruments().unwrap();
+        let data: JsonValue = kiteconnect.mf_instruments().unwrap();
         println!("{:?}", data);
         assert_eq!(data[0]["tradingsymbol"].as_str(), Some("INF846K01DP8"));
     }
