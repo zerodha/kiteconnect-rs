@@ -81,7 +81,7 @@ impl KiteConnect {
             let jsn: JsonValue = resp.json().with_context(|| "Serialization failed")?;
             Ok(jsn)
         } else {
-            Err(anyhow!("Request failed!"))
+            Err(anyhow!(resp.text()?))
         }
     }
 
@@ -128,7 +128,7 @@ impl KiteConnect {
             self.set_access_token(jsn["data"]["access_token"].as_str().unwrap());
             Ok(jsn)
         } else {
-            Err(anyhow!("Session generation failed!"))
+            Err(anyhow!(resp.text()?))
         }
     }
 
@@ -169,7 +169,7 @@ impl KiteConnect {
             self.set_access_token(jsn["access_token"].as_str().unwrap());
             Ok(jsn)
         } else {
-            Err(anyhow!("Couldn't renew access token!"))
+            Err(anyhow!(resp.text()?))
         }
     }
 
