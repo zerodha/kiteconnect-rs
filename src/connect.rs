@@ -123,7 +123,7 @@ impl KiteConnect {
 
         let mut resp = self.send_request(url, "POST", Some(data))?;
 
-        if resp.status().as_u16() == 200 {
+        if resp.status().is_success() {
             let jsn: JsonValue = resp.json()?;
             self.set_access_token(jsn["data"]["access_token"].as_str().unwrap());
             Ok(jsn)
@@ -164,7 +164,7 @@ impl KiteConnect {
 
         let mut resp = self.send_request(url, "POST", Some(data))?;
 
-        if resp.status().as_u16() == 200 {
+        if resp.status().is_success() {
             let jsn: JsonValue = resp.json()?;
             self.set_access_token(jsn["access_token"].as_str().unwrap());
             Ok(jsn)
