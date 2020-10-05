@@ -9,14 +9,14 @@ use std::thread;
 use std::io::{Cursor, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-
+use log::debug;
 use ws::{
     Handler, Handshake, Message, Sender, CloseCode, Result, Error,
     Request, Factory, WebSocket
 };
 use byteorder::{BigEndian, ReadBytesExt};
 use url;
-use serde_json as json;
+use serde_json::{json, Value as JsonValue};
 
 /// KiteTickerHandler lets the user write the business logic inside
 /// the corresponding callbacks which are basically proxied from the
@@ -28,7 +28,7 @@ pub trait KiteTickerHandler {
         debug!("Connection opened");
     }
 
-    fn on_ticks<T>(&mut self, _ws: &mut WebSocketHandler<T>, tick: Vec<json::Value>)
+    fn on_ticks<T>(&mut self, _ws: &mut WebSocketHandler<T>, tick: Vec<JsonValue>)
     where T: KiteTickerHandler {
         debug!("{:?}", tick);
     }
@@ -178,7 +178,7 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
             let mut reader = Cursor::new(msg.clone().into_data());
             let number_of_packets = reader.read_i16::<BigEndian>().unwrap();
 
-            let mut tick_data: Vec<json::Value> = Vec::new();
+            let mut tick_data: Vec<JsonValue> = Vec::new();
             for packet_index in 0..number_of_packets {
                 let packet_length = reader.read_i16::<BigEndian>().unwrap();
                 reader.seek(SeekFrom::Start(4 * (packet_index + 1) as u64))?;
@@ -192,7 +192,7 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
                 if segment == 9 {  // indices
                     tradable = false;
                 }
-                let mut data: json::Value = json!({});
+                let mut data: JsonValue = json!({});
                 if packet_length == 8 {
                     data = json!({
                         "tradable": tradable,
@@ -263,8 +263,8 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
                         data["timestamp"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
 
                         // XXX We have already read 64 bytes now, Remaining 184-64/12 = 10
-                        let mut buy_depth_data: Vec<json::Value> = Vec::with_capacity(5);
-                        let mut sell_depth_data: Vec<json::Value> = Vec::with_capacity(5);
+                        let mut buy_depth_data: Vec<JsonValue> = Vec::with_capacity(5);
+                        let mut sell_depth_data: Vec<JsonValue> = Vec::with_capacity(5);
                         for index in 0..10 {
                             let depth_data = json!({
                                 "quantity": reader.read_i32::<BigEndian>().unwrap() as f64,
