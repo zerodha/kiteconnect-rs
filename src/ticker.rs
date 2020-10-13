@@ -87,9 +87,11 @@ impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
             "a": "subscribe",
             "v": instrument_tokens
         });
+
         for token in &instrument_tokens {
             self.subscribed_tokens.insert(*token, "quote".to_string());
         }
+
         match self.ws {
             Some(ref s) => {
                 s.send(data.to_string())?;
@@ -107,9 +109,11 @@ impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
             "a": "unsubscribe",
             "v": instrument_tokens
         });
+
         for token in &instrument_tokens {
             self.subscribed_tokens.remove(token);
         }
+
         match self.ws {
             Some(ref s) => {
                 s.send(data.to_string())?;
@@ -124,9 +128,11 @@ impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
     /// Resubscribe to all current subscribed tokens
     pub fn resubscribe(&mut self) -> Result<()> {
         let mut modes: HashMap<String, Vec<u32>> = HashMap::new();
+
         for (token, mode) in self.subscribed_tokens.iter() {
             modes.entry(mode.clone()).or_insert(vec![]).push(token.clone());
         }
+
         for (mode, tokens) in modes.iter() {
             debug!("Resubscribing and set mode: {} - {:?}", mode, tokens);
             self.subscribe(tokens.clone())?;
@@ -141,9 +147,11 @@ impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
             "a": "mode",
             "v": [mode.to_string(), instrument_tokens]
         });
+
         for token in &instrument_tokens {
             *self.subscribed_tokens.entry(*token).or_insert("".to_string()) = mode.to_string();
         }
+
         match self.ws {
             Some(ref s) => {
                 s.send(data.to_string())?;
@@ -179,12 +187,14 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
             let number_of_packets = reader.read_i16::<BigEndian>().unwrap();
 
             let mut tick_data: Vec<JsonValue> = Vec::new();
-            for packet_index in 0..number_of_packets {
-                let packet_length = reader.read_i16::<BigEndian>().unwrap();
-                reader.seek(SeekFrom::Start(4 * (packet_index + 1) as u64))?;
+            let mut packet_length: i16;
+
+            let mut j: u64 = 2;
+            for _ in 0..number_of_packets {
+                packet_length = reader.read_i16::<BigEndian>().unwrap();
 
                 let instrument_token = reader.read_i32::<BigEndian>().unwrap();
-                let segment = instrument_token & 0xff;
+                let segment = instrument_token & 0xFF;
                 let mut divisor: f64 = 100.0;
                 if segment == 3 {  // cds
                     divisor = 10000000.0;
@@ -298,7 +308,13 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
                         debug!("undefined packet length received: {}", packet_length)
                     }
                 }
+
+                // Place reader in the position after the packet length
+                reader.seek(SeekFrom::Start(j+2+packet_length as u64))?;
+
+                j = j+2+packet_length as u64;
             }
+
             let cloned_handler = self.handler.clone();
             cloned_handler.lock().unwrap().on_ticks(self, tick_data);
         } else if msg.is_text() {
