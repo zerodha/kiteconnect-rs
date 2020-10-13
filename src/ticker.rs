@@ -9,14 +9,14 @@ use std::thread;
 use std::io::{Cursor, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-
+use log::debug;
 use ws::{
     Handler, Handshake, Message, Sender, CloseCode, Result, Error,
     Request, Factory, WebSocket
 };
 use byteorder::{BigEndian, ReadBytesExt};
 use url;
-use serde_json as json;
+use serde_json::{json, Value as JsonValue};
 
 /// KiteTickerHandler lets the user write the business logic inside
 /// the corresponding callbacks which are basically proxied from the
@@ -28,7 +28,7 @@ pub trait KiteTickerHandler {
         debug!("Connection opened");
     }
 
-    fn on_ticks<T>(&mut self, _ws: &mut WebSocketHandler<T>, tick: Vec<json::Value>)
+    fn on_ticks<T>(&mut self, _ws: &mut WebSocketHandler<T>, tick: Vec<JsonValue>)
     where T: KiteTickerHandler {
         debug!("{:?}", tick);
     }
@@ -87,9 +87,11 @@ impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
             "a": "subscribe",
             "v": instrument_tokens
         });
+
         for token in &instrument_tokens {
             self.subscribed_tokens.insert(*token, "quote".to_string());
         }
+
         match self.ws {
             Some(ref s) => {
                 s.send(data.to_string())?;
@@ -107,9 +109,11 @@ impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
             "a": "unsubscribe",
             "v": instrument_tokens
         });
+
         for token in &instrument_tokens {
             self.subscribed_tokens.remove(token);
         }
+
         match self.ws {
             Some(ref s) => {
                 s.send(data.to_string())?;
@@ -124,9 +128,11 @@ impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
     /// Resubscribe to all current subscribed tokens
     pub fn resubscribe(&mut self) -> Result<()> {
         let mut modes: HashMap<String, Vec<u32>> = HashMap::new();
+
         for (token, mode) in self.subscribed_tokens.iter() {
             modes.entry(mode.clone()).or_insert(vec![]).push(token.clone());
         }
+
         for (mode, tokens) in modes.iter() {
             debug!("Resubscribing and set mode: {} - {:?}", mode, tokens);
             self.subscribe(tokens.clone())?;
@@ -141,9 +147,11 @@ impl<T> WebSocketHandler<T> where T: KiteTickerHandler {
             "a": "mode",
             "v": [mode.to_string(), instrument_tokens]
         });
+
         for token in &instrument_tokens {
             *self.subscribed_tokens.entry(*token).or_insert("".to_string()) = mode.to_string();
         }
+
         match self.ws {
             Some(ref s) => {
                 s.send(data.to_string())?;
@@ -178,116 +186,142 @@ impl<T> Handler for WebSocketHandler<T> where T: KiteTickerHandler {
             let mut reader = Cursor::new(msg.clone().into_data());
             let number_of_packets = reader.read_i16::<BigEndian>().unwrap();
 
-            let mut tick_data: Vec<json::Value> = Vec::new();
-            for packet_index in 0..number_of_packets {
-                let packet_length = reader.read_i16::<BigEndian>().unwrap();
-                reader.seek(SeekFrom::Start(4 * (packet_index + 1) as u64))?;
+            let mut tick_data: Vec<JsonValue> = Vec::new();
+            let mut packet_length: i16;
+
+            let mut j: u64 = 2;
+            for _ in 0..number_of_packets {
+                packet_length = reader.read_i16::<BigEndian>().unwrap();
+
                 let instrument_token = reader.read_i32::<BigEndian>().unwrap();
-                let segment = instrument_token & 0xff;
+                let segment = instrument_token & 0xFF;
                 let mut divisor: f64 = 100.0;
                 if segment == 3 {  // cds
                     divisor = 10000000.0;
                 }
+
                 let mut tradable = true;
                 if segment == 9 {  // indices
                     tradable = false;
                 }
-                let mut data: json::Value = json!({});
-                if packet_length == 8 {
-                    data = json!({
-                        "tradable": tradable,
-                        "mode": "ltp",
-                        "instrument_token": instrument_token,
-                        "last_price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
-                    });
-                } else if packet_length == 28 || packet_length == 32 {
-                    let mode = match packet_length {
-                        28 => "full",
-                        _ => "quote",
-                    };
 
-                    data = json!({
-                        "tradable": tradable,
-                        "mode": mode,
-                        "instrument_token": instrument_token,
-                        "last_price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
-                        "ohlc": {
-                            "high": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
-                            "low": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
-                            "open": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
-                            "close": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
-                        },
-                        "change": 0
-                    });
-                    if data["ohlc"]["close"] != 0 {
-                        let last_price: f64 = data["last_price"].as_f64().unwrap();
-                        let ohlc_close: f64 = data["ohlc"]["close"].as_f64().unwrap();
-                        data["change"] = json!((last_price - ohlc_close) * 100 as f64 / ohlc_close);
-                    }
-                    if packet_length == 32 {  // timestamp incase of full
-                        data["timestamp"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64 / divisor);
-                    }
-                } else if packet_length == 44 || packet_length == 184 {
-                    let mode = match packet_length {
-                        184 => "full",
-                        _ => "quote",
-                    };
+                match packet_length {
+                    // LTP
+                    8 => {
+                        tick_data.push(json!({
+                            "tradable": tradable,
+                            "mode": "ltp",
+                            "instrument_token": instrument_token,
+                            "last_price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                        }));
+                    },
 
-                    data = json!({
-                        "tradable": tradable,
-                        "mode": mode,
-                        "instrument_token": instrument_token,
-                        "last_price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
-                        "last_quantity": reader.read_i32::<BigEndian>().unwrap() as f64,
-                        "average_price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
-                        "volume": reader.read_i32::<BigEndian>().unwrap() as f64,
-                        "buy_quantity": reader.read_i32::<BigEndian>().unwrap() as f64,
-                        "sell_quantity": reader.read_i32::<BigEndian>().unwrap() as f64,
-                        "ohlc": {
-                            "open": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
-                            "high": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
-                            "low": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
-                            "close": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor
+                    // Index quote/full
+                    28 | 32 => {
+                        let mut data: JsonValue  = json!({
+                            "tradable": tradable,
+                            "mode": if packet_length == 28 {"quote"} else {"full"},
+                            "instrument_token": instrument_token,
+                            "last_price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                            "ohlc": {
+                                "high": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                                "low": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                                "open": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                                "close": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                            },
+                            "change": 0
+                        });
+
+                        if data["ohlc"]["close"] != 0 {
+                            let last_price: f64 = data["last_price"].as_f64().unwrap();
+                            let ohlc_close: f64 = data["ohlc"]["close"].as_f64().unwrap();
+                            data["change"] = json!((last_price - ohlc_close) * 100 as f64 / ohlc_close);
                         }
-                    });
-                    if data["ohlc"]["close"] != 0 {
-                        let last_price: f64 = data["last_price"].as_f64().unwrap();
-                        let ohlc_close: f64 = data["ohlc"]["close"].as_f64().unwrap();
-                        data["change"] = json!((last_price - ohlc_close) * 100 as f64 / ohlc_close);
-                    }
-                    if packet_length == 184 {
-                        data["last_trade_time"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
-                        data["oi"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
-                        data["oi_day_high"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
-                        data["oi_day_low"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
-                        data["timestamp"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
 
-                        // XXX We have already read 64 bytes now, Remaining 184-64/12 = 10
-                        let mut buy_depth_data: Vec<json::Value> = Vec::with_capacity(5);
-                        let mut sell_depth_data: Vec<json::Value> = Vec::with_capacity(5);
-                        for index in 0..10 {
-                            let depth_data = json!({
-                                "quantity": reader.read_i32::<BigEndian>().unwrap() as f64,
-                                "price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
-                                "orders": reader.read_i16::<BigEndian>().unwrap() as f64
-                            });
-                            if index < 5 {
-                                buy_depth_data.push(depth_data);
-                            } else {
-                                sell_depth_data.push(depth_data);
+                        if packet_length == 32 {  // timestamp incase of full
+                            data["timestamp"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64 / divisor);
+                        }
+
+                        tick_data.push(data);
+                    },
+
+                    // Quote/Full
+                    44 | 184 => {
+                        let mut data: JsonValue = json!({
+                            "tradable": tradable,
+                            "mode": if packet_length == 44 {"quote"} else {"full"},
+                            "instrument_token": instrument_token,
+                            "last_price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                            "last_quantity": reader.read_i32::<BigEndian>().unwrap() as f64,
+                            "average_price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                            "volume": reader.read_i32::<BigEndian>().unwrap() as f64,
+                            "buy_quantity": reader.read_i32::<BigEndian>().unwrap() as f64,
+                            "sell_quantity": reader.read_i32::<BigEndian>().unwrap() as f64,
+                            "ohlc": {
+                                "open": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                                "high": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                                "low": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                                "close": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor
                             }
-                            // Dont care 2 bytes padding
-                            reader.read_i16::<BigEndian>().unwrap();
+                        });
+
+                        if data["ohlc"]["close"] != 0 {
+                            let last_price: f64 = data["last_price"].as_f64().unwrap();
+                            let ohlc_close: f64 = data["ohlc"]["close"].as_f64().unwrap();
+                            data["change"] = json!((last_price - ohlc_close) * 100 as f64 / ohlc_close);
                         }
-                        data["sell"] = json!(sell_depth_data);
-                        data["buy"] = json!(buy_depth_data);
+
+                        if packet_length == 184 {
+                            data["last_trade_time"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
+                            data["oi"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
+                            data["oi_day_high"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
+                            data["oi_day_low"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
+                            data["timestamp"] = json!(reader.read_i32::<BigEndian>().unwrap() as f64);
+
+                            // XXX We have already read 64 bytes now, Remaining 184-64/12 = 10
+                            let mut buy_depth_data: Vec<JsonValue> = Vec::with_capacity(5);
+                            let mut sell_depth_data: Vec<JsonValue> = Vec::with_capacity(5);
+                            for index in 0..10 {
+                                let depth_data = json!({
+                                    "quantity": reader.read_i32::<BigEndian>().unwrap() as f64,
+                                    "price": reader.read_i32::<BigEndian>().unwrap() as f64 / divisor,
+                                    "orders": reader.read_i16::<BigEndian>().unwrap() as f64
+                                });
+
+                                if index < 5 {
+                                    buy_depth_data.push(depth_data);
+                                } else {
+                                    sell_depth_data.push(depth_data);
+                                }
+
+                                // Dont care 2 bytes padding
+                                reader.read_i16::<BigEndian>().unwrap();
+                            }
+                            data["sell"] = json!(sell_depth_data);
+                            data["buy"] = json!(buy_depth_data);
+                        }
+
+                        tick_data.push(data);
+                    }
+
+                    _ => {
+                        debug!("undefined packet length received: {}", packet_length)
                     }
                 }
-                tick_data.push(data);
+
+                // Place reader in the position after the packet length
+                reader.seek(SeekFrom::Start(j+2+packet_length as u64))?;
+
+                j = j+2+packet_length as u64;
             }
+
             let cloned_handler = self.handler.clone();
             cloned_handler.lock().unwrap().on_ticks(self, tick_data);
+        } else if msg.is_text() {
+            // TODO: Handle text messages
+            println!("text message received {:?}", msg)
         }
+
         Ok(())
     }
 
