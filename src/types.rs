@@ -1,42 +1,66 @@
 use serde::{de, Serialize, Deserialize, Deserializer};
-use chrono::{NaiveDateTime, DateTime, Utc};
-use std::collections::HashMap;
+use chrono::{NaiveDateTime};
+
 #[derive(Serialize, Deserialize, Debug)]
 enum OrderVariety {
     #[serde(rename = "regular")]
-    REGULAR,
+    Regular,
     #[serde(rename = "amo")]
-    AMO,
+    AfterMarketOrder,
     #[serde(rename = "bo")]
-    BO,
+    BracketOrder,
     #[serde(rename = "co")]
-    CO
+    CoverOrder
 }
 #[derive(Serialize, Deserialize, Debug)]
 enum OrderType {
-    MARKET,
-    LIMIT,
-    SL,
+    #[serde(rename = "MARKET")]
+    Market,
+    #[serde(rename = "LIMIT")]
+    Limit,
+    #[serde(rename = "SL")]
+    StopLoss,
     #[serde(rename = "SL-M")]
-    SLM
+    StopLossMarket
 }
 #[derive(Serialize, Deserialize, Debug)]
 enum Product {
-    CNC,
-    NRML,
-    MIS
+    #[serde(rename = "CNC")]
+    CashAndCarry,
+    #[serde(rename = "NRML")]
+    Normal,
+    #[serde(rename = "MIS")]
+    MarginIntradaySqareoff
 }
 #[derive(Serialize, Deserialize, Debug)]
 enum OrderValidity {
-    DAY,
-    IOC
+    #[serde(rename = "DAY")]
+    Day,
+    #[serde(rename = "IOC")]
+    ImmediateOrCancel
 }
 #[derive(Serialize, Deserialize, Debug)]
 enum OrderStatus {
-    COMPLETE,
-    REJECTED,
-    CANCELLED,
-    OPEN
+    #[serde(rename = "VALIDATION PENDING")]
+    ValidationPending,
+    #[serde(rename = "PUT ORDER REQ RECEIVED")]
+    PutOrderReqReceived,
+    #[serde(rename = "OPEN PENDING")]
+    OpenPending,
+    #[serde(rename = "MODIFY VALIDATION PENDING")]
+    ModifyValidationPending,
+    #[serde(rename = "MODIFY PENDING")]
+    ModifyPending,
+    #[serde(rename = "MODIFIED")]
+    Modified,
+    #[serde(rename = "COMPLETE")]
+    Complete,
+    #[serde(rename = "REJECTED")]
+    Rejected,
+    #[serde(rename = "CANCELLED")]
+    Cancelled,
+    #[serde(rename = "OPEN")]
+    Open
 }
 #[derive(Serialize, Deserialize, Debug)]
 enum TransactionType {
@@ -59,8 +83,8 @@ pub struct User {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Order {
     order_id: String,
-    parent_order_id: String,
-    exchange_order_id: String,
+    parent_order_id: Option<String>,
+    exchange_order_id: Option<String>,
     placed_by: String,
     variety: String,
     status: OrderStatus,
@@ -79,18 +103,29 @@ pub struct Order {
     filled_quantity: f64,
     disclosed_quantity: f64,
     market_protection: f64,
-    #[serde(deserialize_with = "naive_date_time_from_str")]    
-    order_timestamp: NaiveDateTime,
-    #[serde(deserialize_with = "naive_date_time_from_str")]    
-    exchange_timestamp: NaiveDateTime,
-    status_message: String,
-    tag: String
+    #[serde(deserialize_with = "optional_naive_date_time_from_str")]    
+    order_timestamp: Option<NaiveDateTime>,
+    #[serde(deserialize_with = "optional_naive_date_time_from_str")]    
+    exchange_timestamp: Option<NaiveDateTime>,
+    status_message: Option<String>,
+    tag: Option<String>
 }
 
-fn naive_date_time_from_str<'de, D>(deserializer: D) -> Result<NaiveDateTime, D::Error>
+fn optional_naive_date_time_from_str<'de, D>(deserializer: D) -> Result<Option<NaiveDateTime>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s: String = Deserialize::deserialize(deserializer)?;
-    NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S").map_err(de::Error::custom)
+    let maybe_naive_date_string: Option<String> = match Deserialize::deserialize(deserializer) {
+        Ok(naive_date_string) => Some(naive_date_string),
+        Err(_) => None
+    };
+
+    match maybe_naive_date_string {
+        Some(naive_date_string) => {
+            NaiveDateTime::parse_from_str(&naive_date_string, "%Y-%m-%d %H:%M:%S")
+            .map(Some)
+            .map_err(de::Error::custom)            
+        },
+        None => Ok(None)
+    }
 }

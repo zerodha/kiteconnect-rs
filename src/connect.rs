@@ -7,7 +7,7 @@
 //
 use reqwest;
 use serde_json::{json, Value as JsonValue};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use crate::types;
 
 #[cfg(test)]
@@ -339,14 +339,16 @@ impl KiteConnect {
     }
 
     /// Get the list of order history
-    pub fn order_history(&self, order_id: &str) -> Result<JsonValue> {
+    pub fn order_history(&self, order_id: &str) -> Result<Vec<types::Order>> {
         let mut params: Vec<(&str, &str)> = Vec::new();
         params.push(("order_id", order_id));
 
         let url = self.build_url("/orders", Some(params));
 
         let resp = self.send_request(url, "GET", None)?;
-        self._raise_or_return_json(resp)
+        let resp_payload = self._raise_or_return_json(resp);
+        serde_json::from_value::<Vec<types::Order>>(resp_payload?["data"].clone())
+            .or_else(|err| Err(anyhow!(err.to_string())))
     }
 
     /// Get all trades
@@ -801,9 +803,9 @@ mod tests {
         .with_body_from_file("mocks/order_info.json")
         .create();
 
-        let data: JsonValue = kiteconnect.order_history("171229000724687").unwrap();
+        let data: Vec<types::Order> = kiteconnect.order_history("171229000724687").unwrap();
         println!("{:?}", data);
-        assert!(data.is_object());
+        assert!(data.len() > 0);
     }
 
     #[test]
