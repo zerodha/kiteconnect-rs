@@ -104,3 +104,4 @@ extern crate byteorder;
 
 pub mod connect;
 pub mod ticker;
+pub mod types;
