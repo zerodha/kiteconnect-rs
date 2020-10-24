@@ -1,5 +1,5 @@
-use serde::{de, Serialize, Deserialize, Deserializer};
-use chrono::{NaiveDateTime};
+use chrono::NaiveDateTime;
+use serde::{de, Deserialize, Deserializer, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 enum OrderVariety {
@@ -10,8 +10,9 @@ enum OrderVariety {
     #[serde(rename = "bo")]
     BracketOrder,
     #[serde(rename = "co")]
-    CoverOrder
+    CoverOrder,
 }
+
 #[derive(Serialize, Deserialize, Debug)]
 enum OrderType {
     #[serde(rename = "MARKET")]
@@ -21,8 +22,9 @@ enum OrderType {
     #[serde(rename = "SL")]
     StopLoss,
     #[serde(rename = "SL-M")]
-    StopLossMarket
+    StopLossMarket,
 }
+
 #[derive(Serialize, Deserialize, Debug)]
 enum Product {
     #[serde(rename = "CNC")]
@@ -30,15 +32,17 @@ enum Product {
     #[serde(rename = "NRML")]
     Normal,
     #[serde(rename = "MIS")]
-    MarginIntradaySqareoff
+    MarginIntradaySqareoff,
 }
+
 #[derive(Serialize, Deserialize, Debug)]
 enum OrderValidity {
     #[serde(rename = "DAY")]
     Day,
     #[serde(rename = "IOC")]
-    ImmediateOrCancel
+    ImmediateOrCancel,
 }
+
 #[derive(Serialize, Deserialize, Debug)]
 enum OrderStatus {
     #[serde(rename = "VALIDATION PENDING")]
@@ -60,12 +64,15 @@ enum OrderStatus {
     #[serde(rename = "CANCELLED")]
     Cancelled,
     #[serde(rename = "OPEN")]
-    Open
+    Open,
 }
+
 #[derive(Serialize, Deserialize, Debug)]
 enum TransactionType {
-    BUY,
-    SELL
+    #[serde(rename = "BUY")]
+    Buy,
+    #[serde(rename = "SELL")]
+    Sell,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -77,7 +84,7 @@ pub struct User {
     broker: String,
     exchanges: Vec<String>,
     products: Vec<String>,
-    order_types: Vec<String>
+    order_types: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -103,12 +110,30 @@ pub struct Order {
     filled_quantity: f64,
     disclosed_quantity: f64,
     market_protection: f64,
-    #[serde(deserialize_with = "optional_naive_date_time_from_str")]    
+    #[serde(deserialize_with = "optional_naive_date_time_from_str")]
     order_timestamp: Option<NaiveDateTime>,
-    #[serde(deserialize_with = "optional_naive_date_time_from_str")]    
+    #[serde(deserialize_with = "optional_naive_date_time_from_str")]
     exchange_timestamp: Option<NaiveDateTime>,
     status_message: Option<String>,
-    tag: Option<String>
+    tag: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Trade {
+    trade_id: String,
+    order_id: String,
+    exchange_order_id: Option<String>,
+    tradingsymbol: String,
+    exchange: String,
+    instrument_token: isize,
+    transaction_type: TransactionType,
+    product: Product,
+    quantity: f64,
+    average_price: f64,
+    #[serde(deserialize_with = "optional_naive_date_time_from_str")]
+    fill_timestamp: Option<NaiveDateTime>,
+    #[serde(deserialize_with = "optional_naive_date_time_from_str")]
+    exchange_timestamp: Option<NaiveDateTime>,
 }
 
 fn optional_naive_date_time_from_str<'de, D>(deserializer: D) -> Result<Option<NaiveDateTime>, D::Error>
@@ -124,7 +149,7 @@ where
         Some(naive_date_string) => {
             NaiveDateTime::parse_from_str(&naive_date_string, "%Y-%m-%d %H:%M:%S")
             .map(Some)
-            .map_err(de::Error::custom)            
+            .map_err(de::Error::custom)
         },
         None => Ok(None)
     }
