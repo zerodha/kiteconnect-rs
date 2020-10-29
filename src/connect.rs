@@ -352,19 +352,25 @@ impl KiteConnect {
     }
 
     /// Get all trades
-    pub fn trades(&self) -> Result<JsonValue> {
+    pub fn trades(&self) -> Result<Vec<types::Trade>> {
         let url = self.build_url("/trades", None);
 
         let resp = self.send_request(url, "GET", None)?;
-        self._raise_or_return_json(resp)
+        let resp_payload = self._raise_or_return_json(resp);
+
+        serde_json::from_value::<Vec<types::Trade>>(resp_payload?["data"].clone())
+            .or_else(|err| Err(anyhow!(err.to_string())))
     }
 
     /// Get all trades
-    pub fn order_trades(&self, order_id: &str) -> Result<JsonValue> {
+    pub fn order_trades(&self, order_id: &str) -> Result<Vec<types::Trade>> {
         let url = self.build_url(format!("/orders/{}/trades", order_id).as_str(), None);
 
         let resp = self.send_request(url, "GET", None)?;
-        self._raise_or_return_json(resp)
+        let resp_payload = self._raise_or_return_json(resp);
+
+        serde_json::from_value::<Vec<types::Trade>>(resp_payload?["data"].clone())
+            .or_else(|err| Err(anyhow!(err.to_string())))
     }
 
     /// Modify an open position product type
@@ -772,9 +778,9 @@ mod tests {
         .with_body_from_file("mocks/order_trades.json")
         .create();
 
-        let data: JsonValue = kiteconnect.order_trades("171229000724687").unwrap();
+        let data: Vec<types::Trade> = kiteconnect.order_trades("171229000724687").unwrap();
         println!("{:?}", data);
-        assert!(data.is_object());
+        assert!(data.len() > 0);
     }
 
     #[test]
@@ -816,9 +822,9 @@ mod tests {
         .with_body_from_file("mocks/trades.json")
         .create();
 
-        let data: JsonValue = kiteconnect.trades().unwrap();
+        let data: Vec<types::Trade> = kiteconnect.trades().unwrap();
         println!("{:?}", data);
-        assert!(data.is_object());
+        assert!(data.len() > 0);
     }
 
     #[test]
