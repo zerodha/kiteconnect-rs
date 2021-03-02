@@ -11,27 +11,23 @@ struct CustomHandler {
 }
 
 impl KiteTickerHandler for CustomHandler {
-    fn on_open<T>(&mut self, ws: &mut WebSocketHandler<T>)
-    where T: KiteTickerHandler {
+    fn on_open(&mut self) {
         // Subscribe to a list of tokens on opening the websocket connection
-        ws.subscribe(vec![53511431]);
-        ws.set_mode("full", vec![53511431]);
+        //ws.subscribe(vec![53511431]);
+        //ws.set_mode("full", vec![53511431]);
         println!("Fellow on_open callback");
     }
 
-    fn on_ticks<T>(&mut self, ws: &mut WebSocketHandler<T>, tick: Vec<json::Value>)
-    where T: KiteTickerHandler {
+    fn on_ticks(&mut self, tick: Vec<json::Value>) {
         println!("{:?}", tick);
         println!("Fellow on_ticks callback");
     }
 
-    fn on_close<T>(&mut self, ws: &mut WebSocketHandler<T>)
-    where T: KiteTickerHandler {
+    fn on_close(&mut self) {
         println!("Fellow on_close callback");
     }
 
-    fn on_error<T>(&mut self, ws: &mut WebSocketHandler<T>)
-    where T: KiteTickerHandler {
+    fn on_error(&mut self) {
         println!("Fellow on_error callback");
     }
 }
@@ -45,6 +41,10 @@ fn main() {
     };
 
     ticker.connect(custom_handler, None);
+
+    ticker.subscribe(vec![3693569]);
+
+    ticker.set_mode("full", vec![3693569]);
 
     loop {}
 }
