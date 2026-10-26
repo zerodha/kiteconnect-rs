@@ -27,6 +27,18 @@ kiteconnect = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
+## Development and tests
+
+The contract tests use the pinned `mock_responses` git submodule. Clone with
+submodules enabled, or initialize it before running the test suite:
+
+```sh
+git submodule update --init --recursive
+cargo fmt --all -- --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
+```
+
 ## Log in and read holdings
 
 Kite Connect login is a browser redirect. Open `login_url()`, log in, and take the `request_token` from the redirect URL. Then exchange it with your API secret:

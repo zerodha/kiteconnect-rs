@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use serde_json::Value;
+use std::fmt;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ApiEnvelope<T> {
@@ -76,8 +77,6 @@ pub enum Error {
 }
 
 /// Error envelope from Kite: `{"status":"error","error_type":..,"message":..}`.
-#[derive(thiserror::Error, Debug)]
-#[error("kite API error {kind} (HTTP {status}): {message}")]
 #[non_exhaustive]
 pub struct ApiError {
     /// Kite's `error_type`.
@@ -88,6 +87,57 @@ pub struct ApiError {
     pub status: u16,
     /// Kite's `data`, if the envelope had one.
     pub data: Option<Value>,
+}
+
+impl fmt::Debug for ApiError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ApiError")
+            .field("kind", &self.kind)
+            .field("message", &sanitize_error(&self.message))
+            .field("status", &self.status)
+            .field("data", &self.data.as_ref().map(redact_value))
+            .finish()
+    }
+}
+
+impl fmt::Display for ApiError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "kite API error {} (HTTP {}): {}",
+            self.kind,
+            self.status,
+            sanitize_error(&self.message)
+        )
+    }
+}
+
+impl std::error::Error for ApiError {}
+
+/*
+ * Keep the raw API data available through the public field, but make derived
+ * diagnostics safe when an upstream error echoes a secret-shaped field.
+ */
+fn redact_value(value: &Value) -> Value {
+    match value {
+        Value::Object(object) => Value::Object(
+            object
+                .iter()
+                .map(|(key, value)| {
+                    (
+                        key.clone(),
+                        if is_secret_key(key) {
+                            Value::String("<redacted>".to_string())
+                        } else {
+                            redact_value(value)
+                        },
+                    )
+                })
+                .collect(),
+        ),
+        Value::Array(values) => Value::Array(values.iter().map(redact_value).collect()),
+        _ => value.clone(),
+    }
 }
 
 impl ApiError {
@@ -399,6 +449,7 @@ mod tests {
     }
 
     use super::{ApiError, Error, ErrorKind, error_from_response, sanitize_error};
+    use serde_json::json;
 
     #[test]
     fn error_kind_round_trips_documented_and_unknown_names() {
@@ -612,6 +663,27 @@ mod tests {
     fn passthrough_when_no_secret_present() {
         let msg = "kite API error NetworkException (HTTP 502): bad gateway";
         assert_eq!(sanitize_error(msg), msg);
+    }
+
+    #[test]
+    fn api_error_diagnostics_redact_secret_values() {
+        let error = Error::Api(ApiError::new(
+            ErrorKind::Other("FutureException".to_string()),
+            "access_token=SENTINEL-MESSAGE",
+            403,
+            Some(json!({
+                "access_token": "SENTINEL-DATA",
+                "nested": {"password": "SENTINEL-NESTED"},
+                "hint": "keep"
+            })),
+        ));
+        let output = format!("{error} {error:?}");
+        assert!(!output.contains("SENTINEL"), "diagnostics leaked: {output}");
+        assert!(output.contains("<redacted>"), "not redacted: {output}");
+        assert!(
+            output.contains("keep"),
+            "useful non-secret data disappeared: {output}"
+        );
     }
 
     #[test]

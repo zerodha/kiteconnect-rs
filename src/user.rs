@@ -1,6 +1,7 @@
 use crate::{Call, KiteConnect, Request};
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Metadata from GET /user/profile.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -24,7 +25,7 @@ pub struct FullUserMeta {
 }
 
 /// Bank account from GET /user/profile/full.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct Bank {
     /// Bank name.
@@ -36,7 +37,7 @@ pub struct Bank {
 }
 
 /// User profile from GET /user/profile.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct UserProfile {
     /// User ID.
@@ -67,7 +68,7 @@ pub struct UserProfile {
 }
 
 /// Full user profile from GET /user/profile/full.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct FullUserProfile {
     /// User ID.
@@ -116,6 +117,60 @@ pub struct FullUserProfile {
     pub twofa_timestamp: Option<NaiveDateTime>,
     /// Extra order metadata, such as iceberg details.
     pub meta: FullUserMeta,
+}
+
+impl fmt::Debug for Bank {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Bank")
+            .field("name", &self.name)
+            .field("branch", &self.branch)
+            .field("account", &"<redacted>")
+            .finish()
+    }
+}
+
+impl fmt::Debug for UserProfile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UserProfile")
+            .field("user_id", &"<redacted>")
+            .field("user_name", &"<redacted>")
+            .field("user_shortname", &"<redacted>")
+            .field("avatar_url", &"<redacted>")
+            .field("user_type", &self.user_type)
+            .field("email", &"<redacted>")
+            .field("broker", &self.broker)
+            .field("meta", &self.meta)
+            .field("products", &self.products)
+            .field("order_types", &self.order_types)
+            .field("exchanges", &self.exchanges)
+            .finish()
+    }
+}
+
+impl fmt::Debug for FullUserProfile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FullUserProfile")
+            .field("user_id", &"<redacted>")
+            .field("user_name", &"<redacted>")
+            .field("user_shortname", &"<redacted>")
+            .field("avatar_url", &"<redacted>")
+            .field("user_type", &self.user_type)
+            .field("email", &"<redacted>")
+            .field("broker", &self.broker)
+            .field("phone", &"<redacted>")
+            .field("twofa_type", &self.twofa_type)
+            .field("bank_accounts", &self.bank_accounts)
+            .field("dp_ids", &"<redacted>")
+            .field("products", &self.products)
+            .field("order_types", &self.order_types)
+            .field("exchanges", &self.exchanges)
+            .field("pan", &"<redacted>")
+            .field("tags", &self.tags)
+            .field("password_timestamp", &self.password_timestamp)
+            .field("twofa_timestamp", &self.twofa_timestamp)
+            .field("meta", &self.meta)
+            .finish()
+    }
 }
 
 /// Available funds from GET /user/margins/{segment}.
@@ -207,7 +262,10 @@ impl KiteConnect {
     pub fn segment_margins(&self, segment: &str) -> Call<Margins> {
         Call::new(
             self.clone(),
-            Request::get(format!("/user/margins/{segment}")),
+            Request::get(format!(
+                "/user/margins/{}",
+                crate::client::path_segment(segment)
+            )),
         )
     }
 }
@@ -247,6 +305,31 @@ mod tests {
         assert_eq!(
             full.twofa_timestamp.unwrap().to_string(),
             "1970-01-01 00:00:00"
+        );
+    }
+
+    #[test]
+    fn profile_debug_redacts_personal_fields() {
+        let mut profile: UserProfile =
+            serde_json::from_value(data(include_str!("../mock_responses/profile.json"))).unwrap();
+        profile.user_id = "SENTINEL-USER-ID".to_string();
+        profile.email = "SENTINEL-EMAIL".to_string();
+        let mut full: FullUserProfile =
+            serde_json::from_value(data(include_str!("../mock_responses/full_profile.json")))
+                .unwrap();
+        full.user_id = "SENTINEL-FULL-USER-ID".to_string();
+        full.phone = "SENTINEL-PHONE".to_string();
+        full.pan = "SENTINEL-PAN".to_string();
+        full.bank_accounts[0].account = "SENTINEL-ACCOUNT".to_string();
+        full.dp_ids[0] = "SENTINEL-DP-ID".to_string();
+        let output = format!("{profile:?} {full:?}");
+        assert!(
+            !output.contains("SENTINEL"),
+            "profile diagnostics leaked: {output}"
+        );
+        assert!(
+            output.contains("<redacted>"),
+            "profile diagnostics were not redacted"
         );
     }
 
@@ -384,5 +467,14 @@ mod tests {
             f64::to_bits(145_706.55)
         );
         mock.assert_async().await;
+    }
+
+    #[test]
+    fn segment_margins_escapes_the_path_component() {
+        let client = KiteConnect::builder("key").build().unwrap();
+        let call = client.segment_margins("a/b?x#y");
+        let request = call.request();
+        assert_eq!(request.path(), "/user/margins/a%2Fb%3Fx%23y");
+        assert_eq!(request.query_pairs(), []);
     }
 }

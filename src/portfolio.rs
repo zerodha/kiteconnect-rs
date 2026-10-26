@@ -499,8 +499,8 @@ fn decode_holdings_auth(
     let mut auth: HoldingsAuthResp = crate::call::decode(client, response, path)?;
     auth.redirect_url = format!(
         "https://kite.zerodha.com/connect/portfolio/authorise/holdings/{}/{}",
-        client.api_key(),
-        auth.request_id
+        crate::client::path_segment(client.api_key()),
+        crate::client::path_segment(&auth.request_id)
     );
     Ok(auth)
 }
@@ -827,5 +827,21 @@ mod tests {
             .unwrap();
         assert_eq!(auth.request_id, "na8QgCeQm05UHG6NL9sAGRzdfSF64UdB");
         mock.assert_calls_async(1).await;
+    }
+
+    #[test]
+    fn holdings_auth_redirect_escapes_path_components() {
+        let client = KiteConnect::builder("api/key").build().unwrap();
+        let response = RawResponse {
+            status: 200,
+            content_type: None,
+            body: br#"{"status":"success","data":{"request_id":"request/id?#"}}"#.to_vec(),
+        };
+        let auth =
+            decode_holdings_auth(&client, &response, "/portfolio/holdings/authorise").unwrap();
+        assert_eq!(
+            auth.redirect_url,
+            "https://kite.zerodha.com/connect/portfolio/authorise/holdings/api%2Fkey/request%2Fid%3F%23"
+        );
     }
 }

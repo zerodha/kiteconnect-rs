@@ -13,7 +13,7 @@
 //! exactly: every field sent comes back verbatim on the following
 //! `GET /alerts`, including a fractional `rhs_constant` and a name with spaces.
 
-use crate::{Call, KiteConnect, Request};
+use crate::{Call, Error, KiteConnect, Request};
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -128,6 +128,20 @@ impl BasketOrderParams {
         self.trigger_price = price;
         self
     }
+
+    fn numeric_values_are_finite(&self) -> bool {
+        [
+            self.price,
+            self.trigger_price,
+            self.squareoff,
+            self.stoploss,
+            self.trailing_stoploss,
+            self.gtt.target,
+            self.gtt.stoploss,
+        ]
+        .into_iter()
+        .all(f64::is_finite)
+    }
 }
 
 /// The `params` of a basket write: either typed, or a verbatim JSON object.
@@ -143,6 +157,15 @@ pub enum BasketItemParams {
     /// resending a fetched object verbatim is the only lossless way to move an
     /// item whose params [`BasketOrderParams`] cannot represent.
     Preserved(Value),
+}
+
+impl BasketItemParams {
+    fn numeric_values_are_finite(&self) -> bool {
+        match self {
+            Self::Authored(params) => params.numeric_values_are_finite(),
+            Self::Preserved(_) => true,
+        }
+    }
 }
 
 /// One entry in a basket write's `items` array.
@@ -190,6 +213,27 @@ pub enum BasketOperation {
         /// Server id of the item to delete.
         id: i64,
     },
+}
+
+impl BasketOperation {
+    fn numeric_values_are_finite(&self) -> bool {
+        match self {
+            Self::Insert { params, .. } | Self::Update { params, .. } => {
+                params.numeric_values_are_finite()
+            }
+            Self::Delete { .. } => true,
+        }
+    }
+}
+
+impl BasketWrite {
+    fn numeric_values_are_finite(&self) -> bool {
+        let items = match self {
+            Self::Create(basket) => &basket.items,
+            Self::Modify(basket) => &basket.items,
+        };
+        items.iter().all(BasketOperation::numeric_values_are_finite)
+    }
 }
 
 /// The `basket` field of a `POST /alerts` that creates an ATO.
@@ -612,7 +656,7 @@ impl AlertParams {
         self.status = Some(status);
         self
     }
-    fn into_form(self) -> Vec<(&'static str, String)> {
+    fn into_form(self) -> crate::Result<Vec<(&'static str, String)>> {
         let mut form = vec![
             ("name", self.name),
             ("type", self.alert_type.to_string()),
@@ -623,7 +667,12 @@ impl AlertParams {
             ("rhs_type", self.rhs_type.to_string()),
         ];
         match self.rhs_type {
-            AlertRhsType::Constant => form.push(("rhs_constant", self.rhs_constant.to_string())),
+            AlertRhsType::Constant => {
+                if !self.rhs_constant.is_finite() {
+                    return Err(Error::InvalidInput("alert numeric values must be finite"));
+                }
+                form.push(("rhs_constant", self.rhs_constant.to_string()));
+            }
             AlertRhsType::Instrument => form.extend([
                 ("rhs_exchange", self.rhs_exchange),
                 ("rhs_tradingsymbol", self.rhs_tradingsymbol),
@@ -633,14 +682,17 @@ impl AlertParams {
         if self.alert_type == AlertType::Ato
             && let Some(basket) = self.basket
         {
+            if !basket.numeric_values_are_finite() {
+                return Err(Error::InvalidInput("alert numeric values must be finite"));
+            }
             let basket = serde_json::to_string(&basket)
-                .expect("BasketWrite contains only serializable fields");
+                .map_err(|_| Error::InvalidInput("alert numeric values must be finite"))?;
             form.push(("basket", basket));
         }
         if let Some(status) = self.status {
             form.push(("status", status.to_string()));
         }
-        form
+        Ok(form)
     }
 }
 
@@ -671,18 +723,20 @@ impl KiteConnect {
     }
     /// `POST /alerts`.
     pub fn create_alert(&self, params: AlertParams) -> Call<Alert> {
-        Call::new(
-            self.clone(),
-            Request::post("/alerts").form(params.into_form()),
-        )
+        let request = Request::post("/alerts");
+        match params.into_form() {
+            Ok(form) => Call::new(self.clone(), request.form(form)),
+            Err(error) => Call::failed(self.clone(), request, error),
+        }
     }
     /// `PUT /alerts/{uuid}`.
     pub fn modify_alert(&self, uuid: &str, params: AlertParams) -> Call<Alert> {
         let uuid = crate::client::path_segment(uuid);
-        Call::new(
-            self.clone(),
-            Request::put(format!("/alerts/{uuid}")).form(params.into_form()),
-        )
+        let request = Request::put(format!("/alerts/{uuid}"));
+        match params.into_form() {
+            Ok(form) => Call::new(self.clone(), request.form(form)),
+            Err(error) => Call::failed(self.clone(), request, error),
+        }
     }
     /// `DELETE /alerts?uuid=..`.
     ///
@@ -1042,5 +1096,36 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn non_finite_alert_values_return_errors() {
+        let client = KiteConnect::builder("k").build().unwrap();
+        let error = client
+            .create_alert(params().rhs_constant(f64::NAN))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::InvalidInput("alert numeric values must be finite")
+        ));
+
+        let basket = BasketWrite::Create(BasketCreate::new(
+            "b",
+            vec![BasketOperation::Insert {
+                exchange: "NSE".into(),
+                tradingsymbol: "INFY".into(),
+                weight: 1,
+                params: BasketItemParams::Authored(BasketOrderParams {
+                    price: f64::INFINITY,
+                    ..order_params()
+                }),
+            }],
+        ));
+        let error = client.create_alert(ato(Some(basket))).await.unwrap_err();
+        assert!(matches!(
+            error,
+            Error::InvalidInput("alert numeric values must be finite")
+        ));
     }
 }

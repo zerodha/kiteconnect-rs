@@ -18,6 +18,7 @@ pub struct Call<T> {
     client: KiteConnect,
     request: Request,
     decoder: fn(&KiteConnect, &RawResponse, &str) -> Result<T>,
+    preflight_error: Option<Error>,
 }
 
 impl<T> Call<T> {
@@ -30,6 +31,18 @@ impl<T> Call<T> {
             client,
             request,
             decoder,
+            preflight_error: None,
+        }
+    }
+    pub(crate) fn failed(client: KiteConnect, request: Request, error: Error) -> Self
+    where
+        T: DeserializeOwned,
+    {
+        Self {
+            client,
+            request,
+            decoder: decode::<T>,
+            preflight_error: Some(error),
         }
     }
     /// Returns the request this call sends, without sending it.
@@ -43,7 +56,16 @@ impl<T> Call<T> {
     /// Returns an error if the request is invalid, transport fails, Kite rejects
     /// the request, or the response is not a valid JSON envelope.
     pub async fn raw(self) -> Result<Value> {
-        envelope_data(&self.client.send(&self.request).await?, self.request.path())
+        let Self {
+            client,
+            request,
+            preflight_error,
+            ..
+        } = self;
+        if let Some(error) = preflight_error {
+            return Err(error);
+        }
+        envelope_data(&client.send(&request).await?, request.path())
     }
     /// Sends the request and returns the HTTP response without reading the envelope.
     ///
@@ -51,7 +73,16 @@ impl<T> Call<T> {
     /// Returns an error if the request is invalid, transport fails, or Kite
     /// returns an unsuccessful HTTP status.
     pub async fn response(self) -> Result<RawResponse> {
-        self.client.send(&self.request).await
+        let Self {
+            client,
+            request,
+            preflight_error,
+            ..
+        } = self;
+        if let Some(error) = preflight_error {
+            return Err(error);
+        }
+        client.send(&request).await
     }
 }
 
@@ -66,12 +97,17 @@ impl<T: Send + 'static> IntoFuture for Call<T> {
     type IntoFuture = Pin<Box<dyn Future<Output = Result<T>> + Send + 'static>>;
 
     fn into_future(self) -> Self::IntoFuture {
+        let Self {
+            client,
+            request,
+            decoder,
+            preflight_error,
+        } = self;
         Box::pin(async move {
-            (self.decoder)(
-                &self.client,
-                &self.client.send(&self.request).await?,
-                self.request.path(),
-            )
+            if let Some(error) = preflight_error {
+                return Err(error);
+            }
+            decoder(&client, &client.send(&request).await?, request.path())
         })
     }
 }

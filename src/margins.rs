@@ -1,4 +1,6 @@
-use crate::{Call, Exchange, KiteConnect, OrderType, Product, Request, TransactionType, Variety};
+use crate::{
+    Call, Error, Exchange, KiteConnect, OrderType, Product, Request, TransactionType, Variety,
+};
 use serde::{Deserialize, Serialize};
 
 /// Order in the `POST /margins/orders` and `POST /margins/basket` body.
@@ -70,6 +72,13 @@ impl OrderMarginParam {
         self.market_protection = Some(protection);
         self
     }
+
+    fn numeric_values_are_finite(&self) -> bool {
+        [self.price, self.trigger_price, self.market_protection]
+            .into_iter()
+            .flatten()
+            .all(f64::is_finite)
+    }
 }
 
 /// Order in the `POST /charges/orders` body.
@@ -124,6 +133,10 @@ impl OrderChargesParam {
             quantity,
             average_price,
         }
+    }
+
+    fn numeric_values_are_finite(&self) -> bool {
+        self.average_price.is_finite()
     }
 }
 
@@ -335,12 +348,25 @@ impl KiteConnect {
         if compact {
             query.push(("mode", "compact"));
         }
-        Call::new(
-            self.clone(),
-            Request::post("/margins/orders")
-                .query(query)
-                .json(serde_json::json!(order_params)),
-        )
+        let request = Request::post("/margins/orders").query(query);
+        if !order_params
+            .iter()
+            .all(OrderMarginParam::numeric_values_are_finite)
+        {
+            return Call::failed(
+                self.clone(),
+                request,
+                Error::InvalidInput("margin numeric values must be finite"),
+            );
+        }
+        match serde_json::to_value(order_params) {
+            Ok(value) => Call::new(self.clone(), request.json(value)),
+            Err(_) => Call::failed(
+                self.clone(),
+                request,
+                Error::InvalidInput("margin numeric values must be finite"),
+            ),
+        }
     }
     /// `POST /margins/basket`.
     pub fn basket_margins(&self, params: BasketParams) -> Call<BasketMargins> {
@@ -356,20 +382,48 @@ impl KiteConnect {
         if compact {
             query.push(("mode", "compact"));
         }
-        Call::new(
-            self.clone(),
-            Request::post("/margins/basket")
-                .query(query)
-                .json(serde_json::json!(order_params)),
-        )
+        let request = Request::post("/margins/basket").query(query);
+        if !order_params
+            .iter()
+            .all(OrderMarginParam::numeric_values_are_finite)
+        {
+            return Call::failed(
+                self.clone(),
+                request,
+                Error::InvalidInput("margin numeric values must be finite"),
+            );
+        }
+        match serde_json::to_value(order_params) {
+            Ok(value) => Call::new(self.clone(), request.json(value)),
+            Err(_) => Call::failed(
+                self.clone(),
+                request,
+                Error::InvalidInput("margin numeric values must be finite"),
+            ),
+        }
     }
     /// `POST /charges/orders`.
     pub fn order_charges(&self, params: ChargesParams) -> Call<Vec<OrderCharges>> {
         let ChargesParams { order_params } = params;
-        Call::new(
-            self.clone(),
-            Request::post("/charges/orders").json(serde_json::json!(order_params)),
-        )
+        let request = Request::post("/charges/orders");
+        if !order_params
+            .iter()
+            .all(OrderChargesParam::numeric_values_are_finite)
+        {
+            return Call::failed(
+                self.clone(),
+                request,
+                Error::InvalidInput("margin numeric values must be finite"),
+            );
+        }
+        match serde_json::to_value(order_params) {
+            Ok(value) => Call::new(self.clone(), request.json(value)),
+            Err(_) => Call::failed(
+                self.clone(),
+                request,
+                Error::InvalidInput("margin numeric values must be finite"),
+            ),
+        }
     }
 }
 
@@ -515,6 +569,48 @@ mod tests {
             })
         );
     }
+
+    #[tokio::test]
+    async fn non_finite_json_inputs_return_errors() {
+        let client = KiteConnect::builder("key").build().unwrap();
+        let error = client
+            .order_margins(MarginParams::new(vec![order().price(f64::NAN)]))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::InvalidInput("margin numeric values must be finite")
+        ));
+
+        let error = client
+            .basket_margins(BasketParams::new(vec![order().price(f64::INFINITY)]))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::InvalidInput("margin numeric values must be finite")
+        ));
+
+        let error = client
+            .order_charges(ChargesParams::new(vec![OrderChargesParam::new(
+                "OID-1",
+                Exchange::Nse,
+                "INFY",
+                TransactionType::Buy,
+                Variety::Regular,
+                Product::Cnc,
+                OrderType::Market,
+                1,
+                f64::NEG_INFINITY,
+            )]))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::InvalidInput("margin numeric values must be finite")
+        ));
+    }
+
     #[tokio::test]
     async fn order_margins_request() {
         let server = MockServer::start_async().await;

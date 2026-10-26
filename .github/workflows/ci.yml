@@ -29,6 +29,15 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --locked
+      - name: Check rustdoc
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --locked
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Audit dependencies (baseline)
+        continue-on-error: true
+        run: cargo audit
       - name: Check on the minimum Rust (rust-version)
         run: |
           rustup toolchain install 1.92.0 --profile minimal

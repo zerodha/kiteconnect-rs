@@ -1,4 +1,4 @@
-use crate::{Call, Exchange, KiteConnect, Product, Request, TransactionType};
+use crate::{Call, Error, Exchange, KiteConnect, Product, Request, TransactionType};
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -102,7 +102,7 @@ impl GttParams {
         self
     }
 
-    fn into_form(self) -> [(&'static str, String); 3] {
+    fn into_form(self) -> crate::Result<[(&'static str, String); 3]> {
         let (trigger_type, legs, trailing_points) = match self.trigger {
             GttTrigger::Single(leg) => ("single", vec![leg], None),
             GttTrigger::TwoLeg { lower, upper } => ("two-leg", vec![lower, upper], None),
@@ -120,6 +120,14 @@ impl GttParams {
                 Some(trailing_points),
             ),
         };
+        if !self.last_price.is_finite()
+            || legs
+                .iter()
+                .any(|leg| !leg.trigger_value.is_finite() || !leg.limit_price.is_finite())
+            || trailing_points.is_some_and(|points| !points.is_finite())
+        {
+            return Err(Error::InvalidInput("GTT numeric values must be finite"));
+        }
         let mut condition = json!({
             "exchange": self.exchange,
             "tradingsymbol": self.tradingsymbol,
@@ -143,11 +151,11 @@ impl GttParams {
                 })
             })
             .collect();
-        [
+        Ok([
             ("type", trigger_type.to_string()),
             ("condition", condition.to_string()),
             ("orders", json!(orders).to_string()),
-        ]
+        ])
     }
 }
 
@@ -301,17 +309,19 @@ impl KiteConnect {
     }
     /// `POST /gtt/triggers`.
     pub fn place_gtt(&self, params: GttParams) -> Call<GttResponse> {
-        Call::new(
-            self.clone(),
-            Request::post("/gtt/triggers").form(params.into_form()),
-        )
+        let request = Request::post("/gtt/triggers");
+        match params.into_form() {
+            Ok(form) => Call::new(self.clone(), request.form(form)),
+            Err(error) => Call::failed(self.clone(), request, error),
+        }
     }
     /// `PUT /gtt/triggers/{id}`.
     pub fn modify_gtt(&self, trigger_id: i64, params: GttParams) -> Call<GttResponse> {
-        Call::new(
-            self.clone(),
-            Request::put(format!("/gtt/triggers/{trigger_id}")).form(params.into_form()),
-        )
+        let request = Request::put(format!("/gtt/triggers/{trigger_id}"));
+        match params.into_form() {
+            Ok(form) => Call::new(self.clone(), request.form(form)),
+            Err(error) => Call::failed(self.clone(), request, error),
+        }
     }
     /// `DELETE /gtt/triggers/{id}`.
     pub fn delete_gtt(&self, trigger_id: i64) -> Call<GttResponse> {
@@ -347,7 +357,7 @@ mod tests {
         )
     }
     fn wire(params: GttParams) -> (String, Value, Value) {
-        let [(_, kind), (_, condition), (_, orders)] = params.into_form();
+        let [(_, kind), (_, condition), (_, orders)] = params.into_form().unwrap();
         (
             kind,
             serde_json::from_str(&condition).unwrap(),
@@ -492,6 +502,25 @@ mod tests {
                 assert_eq!(condition["trailing_points"], json!([2.0]));
             }
         }
+    }
+
+    #[tokio::test]
+    async fn non_finite_gtt_values_return_an_error() {
+        let client = KiteConnect::builder("key").build().unwrap();
+        let error = client
+            .place_gtt(GttParams::new(
+                "RAIN",
+                Exchange::Nse,
+                f64::NAN,
+                TransactionType::Sell,
+                GttTrigger::Single(GttTriggerParams::new(100.0, 99.0, 1)),
+            ))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::InvalidInput("GTT numeric values must be finite")
+        ));
     }
 
     #[tokio::test]
